@@ -109,14 +109,15 @@ export const PRESETS = [
 // Close-up stops for watching people at work. `target` and `from` can read the map data.
 const bearingOf = (rot, turn = 0) => (((Math.atan2(Math.sin(rot), -Math.cos(rot)) * 180) / Math.PI) + turn + 360) % 360;
 export const WORK_STOPS = [
-  { key: 'q', name: 'The quarrymen', blurb: 'Drilling, splitting and the horse derrick', structure: 'quarry', dist: 38, tilt: 24, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
-  { key: 'w', name: 'The stonecutters’ yard', blurb: 'Mallets, chisels and polishing', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 36, tilt: 26, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
+  { key:'g', name:'Inside the Gorge', blurb:'Rock walls, white water and the old pine', target:d=>({x:-55,z:-125}), dist:185, tilt:34, from:145 },
+  { key: 'q', name: 'The quarrymen', blurb: 'Drilling, splitting and the horse derrick', structure: 'quarry', dist: 58, tilt: 32, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
+  { key: 'w', name: 'The stonecutters’ yard', blurb: 'Mallets, chisels and polishing', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 70, tilt: 38, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
   { key: 'e', name: 'Main Street', blurb: 'Everyday life in town', target: (d) => {
     const c = d.toLocal(45.1288, -66.8255), s = d.meta.streets.find((q) => q.name === 'Main Street');
     const p = s ? s.pts.reduce((b, q) => (Math.hypot(q[0] - c.x, q[1] - c.z) < Math.hypot(b[0] - c.x, b[1] - c.z) ? q : b)) : [c.x, c.z];
     return { x: p[0], z: p[1] };
-  }, dist: 70, tilt: 22, from: 200 },
-  { key: 'r', name: 'The wharf and the Basin', blurb: 'Loading schooners with stone', target: (d) => { const w = d.meta.structures.wharf; return { x: w.x + Math.sin(w.rot) * 45, z: w.z + Math.cos(w.rot) * 45 }; }, dist: 55, tilt: 24, from: (d) => bearingOf(d.meta.structures.wharf.rot, 95) },
+  }, dist: 115, tilt: 44, from: 260 },
+  { key: 'r', name: 'The wharf and the Basin', blurb: 'Loading schooners with stone', target: (d) => { const w = d.meta.structures.wharf; return { x: w.x + Math.sin(w.rot) * 45, z: w.z + Math.cos(w.rot) * 45 }; }, dist: 175, tilt: 38, from: (d) => bearingOf(d.meta.structures.wharf.rot, 65) },
 ];
 
 export const SOURCES = [MARTIN, OHALLORAN, GREARSON];
@@ -137,7 +138,7 @@ export function buildLabels(data, scene, onPick) {
       div.tabIndex = 0;
       div.setAttribute('role', 'button');
       div.addEventListener('click', () => onPick(p));
-      div.addEventListener('keydown', (e) => { if (e.key === 'Enter') onPick(p); });
+      div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(p); } });
     }
     const obj = new CSS2DObject(div);
     const { x, z } = locate(data, p);
@@ -166,10 +167,17 @@ export function buildLabels(data, scene, onPick) {
       }
       // The nearest, most important names win; one that would overlap them waits its turn.
       live.sort((a, b) => a.userData.place.tier - b.userData.place.tier || a.userData.d - b.userData.d);
+      // Reserve screen space occupied by the interface before placing any map label.
       const taken = [];
+      for (const id of ['masthead', 'panel', 'caption', 'place-card', 'view-title', 'mapctl']) {
+        const el = document.getElementById(id);
+        if (!el || !el.getClientRects().length) continue;
+        const r = el.getBoundingClientRect();
+        taken.push({x:r.x+r.width/2, y:r.y+r.height/2, w:r.width/2+6, h:r.height/2+6});
+      }
       for (const o of live) {
         v.copy(o.position).project(camera);
-        if (v.z > 1 || v.z < -1) continue;
+        if (v.z > 1 || v.z < -1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) { o.visible = false; continue; }
         const u = o.userData;
         if (!u.w && o.element.offsetWidth) { u.w = o.element.offsetWidth; u.h = o.element.offsetHeight; }
         const w = (u.w || o.element.textContent.length * 8 + 24) / 2 + 4, h = (u.h || 20) / 2 + 3;

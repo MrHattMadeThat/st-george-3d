@@ -6,6 +6,7 @@ import { buildWorld } from './world.js';
 import { PRESETS, WORK_STOPS, SOURCES, buildLabels, locate } from './places.js';
 import { buildJourney } from './journey.js';
 import { buildLife } from './life.js';
+import { buildRailway } from './railway.js';
 
 const params = new URLSearchParams(location.search);
 const quality = params.get('q') || 'medium';
@@ -15,7 +16,7 @@ const $ = (id) => document.getElementById(id);
 // ------------------------------------------------------------------ welcome screen
 
 const welcome = $('welcome');
-if (!['clean', 'journey', 'preset', 'nowelcome'].some((k) => params.has(k))) welcome.showModal();
+// Start in the landscape. The field guide provides progressive discovery; Controls opens the full guide.
 
 // ------------------------------------------------------------------ renderer, camera, lights
 
@@ -35,8 +36,8 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#d9ecf2', 30000, 90000);
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 5, 200000);
 
-scene.add(new THREE.HemisphereLight('#dff1ff', '#6f7d4a', 1.35));
-const sun = new THREE.DirectionalLight('#fff1d6', 2.6);
+scene.add(new THREE.HemisphereLight('#dff1ff', '#7b7967', 1.45));
+const sun = new THREE.DirectionalLight('#fff0d6', 1.8);
 sun.position.set(-0.7, 1.1, -0.45).multiplyScalar(10000); // afternoon light from the north-west, map-style
 scene.add(sun);
 
@@ -66,10 +67,31 @@ frame();
 
 // ------------------------------------------------------------------ load and build
 
-const data = await loadData();
+let data, railSource;
+try {
+  [data, railSource] = await Promise.all([loadData(), fetch('data/railway.json').then(r => { if (!r.ok) throw new Error('Railway data unavailable'); return r.json(); })]);
+} catch (error) {
+  $('loading').replaceChildren();
+  const message = document.createElement('p'); message.textContent = 'The landscape could not load. Please check your connection and try again.';
+  const retry = document.createElement('button'); retry.textContent = 'Try again'; retry.onclick = () => location.reload();
+  $('loading').append(message, retry); $('w-status').textContent = message.textContent;
+  console.error(error); throw error;
+}
+data.railway = railSource;
 const world = buildWorld(data, { scene, quality, exag: +$('opt-exag').value });
 const labels = buildLabels(data, scene, showPlace);
 const life = buildLife({ scene, data, world, camera });
+const railway = buildRailway(data, world, railSource, scene);
+let era = params.get('era') === '1874' || params.has('journey') ? '1874' : '1880';
+let savedEra = null;
+function setEra(value) {
+  era = value; $('era').value = value; railway.setVisible(value === '1880');
+  document.body.dataset.era = value;
+  if (value === '1874' && $('view-name').textContent === 'The railway arrives') { // the railway just vanished from under the title
+    $('view-name').textContent = 'Before the railway'; $('view-description').textContent = '1874 · granite moves by water';
+  }
+}
+setEra(era);
 labels.place(world.exag);
 $('loading').hidden = true;
 $('w-status').textContent = '';
@@ -99,6 +121,8 @@ function flyTo(p, seconds = 2.4) {
   if (!to) return;
   glide = null;
   const end = to.pos && to.target ? to : viewFor(to);
+  if (to.name) { $('view-name').textContent = to.name; $('view-description').textContent = to.blurb || 'St. George and the Granite Coast'; }
+  else { $('view-name').textContent = 'A closer look'; $('view-description').textContent = 'Explore the landscape at your own pace.'; }
   document.querySelectorAll('.stops button').forEach((b) => b.classList.toggle('active', b.dataset.key === to.key && to.key != null));
   if (reducedMotion || seconds <= 0) {
     camera.position.copy(end.pos); controls.target.copy(end.target); flight = null; return;
@@ -144,18 +168,38 @@ tabs.forEach((t, k) => {
     showTab(n); n.focus();
   });
 });
-showTab(tabs[0]);
+showTab($('tab-places'));
 
 function stopButton(p, box) {
   const b = document.createElement('button');
   b.type = 'button';
   b.dataset.key = p.key;
   b.innerHTML = `<kbd>${p.key.toUpperCase()}</kbd><span class="stop-name">${p.name}</span><span class="stop-blurb">${p.blurb || ''}</span>`;
-  b.addEventListener('click', () => { journey.stop(); flyTo(p); });
+  b.addEventListener('click', () => { journey.stop(); flyTo(p); if (innerWidth <= 700) setCollapsed(true); });
   box.appendChild(b);
 }
 for (const p of WORK_STOPS) stopButton(p, $('work-stops'));
 for (const p of PRESETS) stopButton(p, $('presets'));
+$('place-search').addEventListener('input', e => {
+  const query = e.target.value.trim().toLocaleLowerCase(); let matches = 0;
+  document.querySelectorAll('.stops button').forEach(b => { b.hidden = !b.textContent.toLocaleLowerCase().includes(query); if (!b.hidden) matches++; });
+  const railCard = document.querySelector('.railway-card'); railCard.hidden = !railCard.textContent.toLocaleLowerCase().includes(query);
+  if (!railCard.hidden) matches++;
+  $('search-empty').hidden = matches > 0;
+});
+$('btn-home').addEventListener('click', () => { journey.stop(); $('place-card').hidden = true; flyTo('1'); });
+$('btn-railway').addEventListener('click', () => {
+  journey.stop(); setEra('1880'); railway.restart();
+  const p = railway.location, target = new THREE.Vector3(p.x, groundY(p.x,p.z) + 2, p.z);
+  flyTo({ target, pos: target.clone().add(new THREE.Vector3(-46, 32, 58)), name: 'The railway arrives', blurb: '1880 onward · Shore Line corridor · station location approximate' });
+  if (innerWidth <= 700) setCollapsed(true);
+});
+$('era').addEventListener('change', e => { journey.stop(); setEra(e.target.value); });
+$('quality').value = params.get('q') || 'auto';
+$('quality').addEventListener('change', e => {
+  const url = new URL(location.href); if (e.target.value === 'auto') url.searchParams.delete('q'); else url.searchParams.set('q', e.target.value);
+  url.searchParams.set('nowelcome', ''); url.searchParams.set('era', era); location.href = url.href;
+});
 
 function setCollapsed(on) {
   document.body.classList.toggle('collapsed', on);
@@ -192,6 +236,7 @@ function setExag(e) {
   labels.place(e);
   journey.refresh();
   life.refresh();
+  railway.refresh();
   controls.target.y *= k;
   camera.position.y = Math.max(camera.position.y, controls.target.y + 50);
   $('exag-val').textContent = `${e}× real`;
@@ -218,6 +263,7 @@ function showPlace(p) {
 $('place-close').addEventListener('click', () => { $('place-card').hidden = true; });
 
 const toggleClean = () => { document.body.classList.toggle('clean'); frame(); };
+$('btn-exit-clean').addEventListener('click', toggleClean);
 $('btn-clean').addEventListener('click', toggleClean);
 const about = $('about');
 $('btn-about').addEventListener('click', () => about.showModal());
@@ -232,6 +278,9 @@ $('sources').innerHTML = SOURCES.map((s) => `<li>${s}</li>`).join('') +
 
 const journey = buildJourney({ scene, camera, controls, data, world, life, setTide });
 const stepList = $('j-steps');
+const chapters = [{name:'Quarry', start:0}, {name:'River', start:3}, {name:'Mill', start:5}, {name:'Wharf', start:9}, {name:'Sea', start:11}];
+chapters.forEach(c => { const b = document.createElement('button'); b.textContent = c.name; b.type = 'button'; b.addEventListener('click', () => { flight = null; journey.go(c.start); journey.play(); }); $('chapters').append(b); });
+$('cap-detail').addEventListener('click', () => { const on = $('caption').classList.toggle('expanded'); $('cap-detail').setAttribute('aria-expanded',on); $('cap-detail').textContent = on ? 'Read less' : 'Read more'; });
 journey.steps.forEach((s, k) => {
   const li = document.createElement('li');
   const b = document.createElement('button');
@@ -267,6 +316,11 @@ function journeyUI() {
   [...stepList.children].forEach((li, k) => { li.classList.toggle('current', k === step); li.classList.toggle('done', step >= 0 && k < step); });
   bars.forEach((b, k) => { b.style.width = k < step ? '100%' : k > step ? '0%' : `${t * 100}%`; });
   document.body.classList.toggle('journey-on', step >= 0);
+  if (step >= 0 && savedEra === null) { savedEra = era; setEra('1874'); if (innerWidth <= 700) setCollapsed(true); }
+  if (step < 0 && savedEra !== null) { const previous = savedEra; savedEra = null; setEra(previous); }
+  const chapter = chapters.findLastIndex(c => c.start <= step);
+  [...$('chapters').children].forEach((b,i) => b.setAttribute('aria-current', i === chapter ? 'step' : 'false'));
+  if (step >= 0) { $('view-name').textContent = 'The Stone’s Journey'; $('view-description').textContent = 'Summer 1874 · ' + (chapters[chapter]?.name || ''); }
   const s = journey.steps[step];
   $('caption').hidden = !s || !showCaptions;
   if (s) {
@@ -310,7 +364,7 @@ $('j-speed').addEventListener('change', (e) => { journey.state.speed = +e.target
 $('opt-captions').addEventListener('change', (e) => { showCaptions = e.target.checked; journeyUI(); });
 
 addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || about.open || welcome.open) return;
+  if (e.target instanceof HTMLTextAreaElement || e.target.isContentEditable || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || about.open || welcome.open) return;
   if (e.target.getAttribute?.('role') === 'tab') return;
   if (e.key === 'ArrowLeft' && journey.active) { e.preventDefault(); stepBy(-1); return; }
   if (e.key === 'ArrowRight' && journey.active) { e.preventDefault(); stepBy(1); return; }
@@ -333,7 +387,7 @@ window.stage = {
   /** the Stone's Journey: play(), pause(), go(step), stop(), steps, state */
   get journey() { return journey; },
   /** the people, horses, derrick, dory and gulls: crowd.list, herd.list, person(role, f), horse(h) */
-  life,
+  life, railway,
   route: data.meta.route, anchors: data.meta.anchors,
   /** run fn(dt, elapsed) every frame; returns an unsubscribe function */
   onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -411,8 +465,9 @@ function turnCompass() {
 const fadeEl = $('fade'); // the journey's dip to paper when a long trip skips ahead
 
 let elapsed = 0, last = performance.now();
-flyTo(PRESETS.find((p) => p.key === (params.get('preset') || '1')) || PRESETS[0], 0);
+flyTo(PRESETS.find((p) => p.key === (params.get('preset') || '2')) || PRESETS[0], 0);
 if (params.has('clean')) { document.body.classList.add('clean'); frame(); }
+if (innerWidth <= 700) setCollapsed(true);
 if (params.has('journey')) journey.play();
 
 renderer.setAnimationLoop((now) => {
@@ -422,6 +477,12 @@ renderer.setAnimationLoop((now) => {
   stepFlight(dt);
   stepGlide(dt);
   controls.update();
+  if (!journey.active && !flight) {
+    const e = data.meta.extent, before = controls.target.clone();
+    controls.target.x = THREE.MathUtils.clamp(controls.target.x, e.xmin, e.xmax);
+    controls.target.z = THREE.MathUtils.clamp(controls.target.z, e.zmin, e.zmax);
+    camera.position.add(controls.target.clone().sub(before));
+  }
   // keep the camera out of the hills
   const floor = groundY(camera.position.x, camera.position.z) + 3;
   if (camera.position.y < floor) camera.position.y = floor;
@@ -432,6 +493,7 @@ renderer.setAnimationLoop((now) => {
   talkUI();
   if (fadeEl.style.opacity !== String(journey.state.fade)) fadeEl.style.opacity = journey.state.fade;
   life.update(dt);
+  railway.update(reducedMotion ? 0 : dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 

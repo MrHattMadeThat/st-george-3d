@@ -6,7 +6,7 @@
   "description": "A cartoon 3D stage of St. George, NB and its surroundings in the Granite Town era (1874-1876).",
   "scripts": {
     "dev": "vite --port 5631 --strictPort",
-    "build:data": "node scripts/build-terrain.mjs",
+    "build:data": "node scripts/build-terrain.mjs && node scripts/build-railway.mjs",
     "build": "vite build",
     "preview": "vite preview --port 5632 --strictPort"
   },

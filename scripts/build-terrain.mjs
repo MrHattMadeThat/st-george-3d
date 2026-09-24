@@ -634,8 +634,8 @@ function ledges(x, z, g, sl) {
 }
 
 const PAL = {
-  meadow: [156, 196, 96], meadow2: [134, 182, 84], forest: [70, 120, 62], forestMixed: [92, 136, 66],
-  sand: [226, 206, 150], shoreRock: [150, 140, 128], mud: [141, 122, 94], mudWet: [112, 100, 80],
+  meadow: [147, 174, 116], meadow2: [127, 157, 101], forest: [69, 106, 71], forestMixed: [91, 126, 82],
+  sand: [207, 193, 153], shoreRock: [150, 140, 128], mud: [141, 122, 94], mudWet: [112, 100, 80],
   seabed: [88, 104, 92], lakebed: [112, 104, 76], marsh: [170, 182, 98], marsh2: [128, 156, 82],
   granite: [184, 100, 86], granite2: [214, 140, 118], rock: [140, 138, 130], bank: [120, 128, 78],
   hedge: [92, 120, 64],
@@ -645,7 +645,10 @@ const PAL = {
 const lerpC = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
 
 function fieldAt(x, z) { // cleared land split into lots; returns a field kind or -1
-  const ang = 0.5; // lots run roughly NW-SE here
+  const ox = x, oz = z;
+  x += 24 * Math.sin(oz / 170) + 12 * Math.sin(oz / 63);
+  z += 19 * Math.sin(ox / 210);
+  const ang = 0.5; // gently bent lots; keep in step with the ground shader
   const u = x * Math.cos(ang) - z * Math.sin(ang), v = x * Math.sin(ang) + z * Math.cos(ang);
   const W = 150, H = 90, i = Math.floor(u / W), j = Math.floor(v / H);
   const fu2 = u / W - i, fv2 = v / H - j;
@@ -1006,7 +1009,7 @@ for (let j = 0; j * TREE_SPACING < ZMAX - ZMIN; j++) for (let i = 0; i * TREE_SP
   if (g) p *= 0.3;
   if (sl > 0.3) p *= 0.4;
   const lot = fieldAt(x, z), paintIdx = (px, pz) => clamp(Math.floor((pz - ZMIN) / PAINT), 0, PH - 1) * PW + clamp(Math.floor((px - XMIN) / PAINT), 0, PW - 1);
-  const isField = farmAt[paintIdx(lot.cx, lot.cz)] > Math.max(0.35, lot.open) && farmAt[paintIdx(x, z)] > 0.12;
+  const isField = farmAt[paintIdx(lot.cx, lot.cz)] > Math.max(0.58, lot.open) && farmAt[paintIdx(x, z)] > 0.3;
   if (isField) p = lot.edge ? 0.3 : 0; // open fields; a few trees on the lot lines
   p *= smooth(200, 650, Math.hypot(x - townCentre[0], z - townCentre[1])) * 0.85 + 0.15; // the town core is mostly cleared
   if (roll > p) continue;

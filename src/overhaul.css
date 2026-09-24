@@ -1,0 +1,139 @@
+/* The Granite Coast: a quiet field guide around a generous, living landscape. */
+:root { --paper:#f3f0e5; --paper-2:#e3e5d9; --card:#faf9f1; --ink:#203e3a; --ink-soft:#596a61; --granite:#a65740; --granite-dark:#8b4634; --gold:#d8bc77; --gold-soft:#efead5; --sea:#295e65; --shadow:0 12px 40px #16382e21; --panel-w:324px; }
+body { background:#cfdbd8; }
+button, select, input { font:inherit; }
+button { transition:background .15s, transform .15s; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline:3px solid #a65740; outline-offset:3px; }
+#masthead { position:fixed; inset:0 0 auto; height:82px; padding:0 28px; display:flex; gap:26px; align-items:center; background:#f5f3e9f5; border-bottom:1px solid #21423b24; z-index:7; }
+.brand { display:flex; align-items:center; gap:12px; color:var(--ink); text-decoration:none; font-size:17px; font-weight:750; letter-spacing:.12em; }
+.brand-mark { display:grid; place-items:center; width:44px; height:44px; border:1px solid #49695c; border-radius:50%; font:20px Georgia; letter-spacing:-.04em; }
+.brand small { display:block; font-size:9px; letter-spacing:.27em; margin-top:5px; color:#68776a; }
+.era-control { margin-left:auto; display:flex; gap:10px; align-items:center; }
+.era-control label { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-soft); }
+select { padding:9px; border:1px solid #24483b26; border-radius:6px; color:var(--ink); background:var(--card); font-size:12px; }
+#btn-home { border:0; border-left:1px solid #24483b26; padding:8px 0 8px 24px; background:none; color:var(--ink); font-size:13px; cursor:pointer; }
+#view-title { position:fixed; left:calc(var(--panel-w) + 56px); top:110px; pointer-events:none; z-index:3; color:#183d36; text-shadow:0 1px 8px #f2f4de; }
+#view-title .eyebrow { font-size:9px; letter-spacing:.2em; color:#375c51; }
+#view-name { font:36px/1.1 var(--serif); font-weight:400; margin:8px 0; }
+#view-description { font-size:12px; margin:0; }
+body.collapsed #view-title { left:28px; top:157px; }
+#panel { top:104px; bottom:34px; left:20px; border:1px solid #29493630; border-radius:10px; background:var(--paper); box-shadow:var(--shadow); }
+#panel header { padding:20px 20px 15px; }
+#panel header h1 { font-size:26px; font-weight:400; margin-top:9px; }
+.eyebrow { font-size:9px; letter-spacing:.17em; color:#758071; }
+.icon-btn { border:0; color:var(--ink-soft); background:transparent; width:30px; height:30px; }
+.tabs { padding:0 16px; gap:14px; border-bottom:1px solid #21423b20; }
+.tabs button { font-size:12px; font-weight:600; border:0; border-radius:0; padding:12px 0; margin:0; }
+.tabs button[aria-selected=true] { background:transparent; border:0; border-bottom:2px solid var(--granite); color:var(--granite); }
+.tabs button:hover { background:transparent; color:var(--granite); }
+.panes { background:var(--card); }
+.panes section { padding:18px; gap:12px; }
+#panel h2 { font:19px var(--serif); font-weight:400; margin:10px 0 2px; display:block; }
+#panel h2 .hint { display:block; font-size:10px; margin-top:4px; text-transform:uppercase; letter-spacing:.1em; }
+.explore-intro { padding:3px 0 5px; }
+.explore-intro p:last-child { font:19px/1.4 var(--serif); margin:8px 0 2px; }
+.search-label { font-size:11px; font-weight:650; margin-top:2px; }
+#place-search { width:100%; padding:12px; background:#fff; border:1px solid #21423b28; border-radius:5px; color:var(--ink); font-size:13px; }
+.stops { gap:6px; }
+.stops button { padding:12px 10px; box-shadow:none; border:1px solid #29493617; border-radius:6px; background:#f0f1e8; gap:2px 11px; min-height:58px; }
+.stops button kbd { border:0; background:#e0e5d7; font:12px var(--serif); border-radius:50%; width:30px; height:30px; display:grid; place-items:center; padding:0; color:#4a6251; }
+.stop-name { font-size:12px; font-weight:650; }
+.stop-blurb { font-size:11px; line-height:1.4; }
+.stops button:hover { background:#e4e9dc; }
+.stops button.active { background:#294e45; border-color:#294e45; }
+.stops button.active .stop-blurb { color:#d6ded2; }
+.stops button:active { transform:translateY(1px); }
+.railway-card { padding:18px 16px; background:#264a40; color:#f5f0dd; border-radius:7px; margin:8px 0; }
+.railway-card .eyebrow { color:#d5c799; }
+#panel .railway-card h2 { font-size:23px; margin:8px 0; }
+.railway-card p:not(.eyebrow) { font-size:12px; line-height:1.55; color:#d8e0d2; margin:7px 0 14px; }
+.railway-card button { border:1px solid #b5c4ac80; border-radius:4px; background:#f0e8cb; color:#264a40; width:100%; padding:10px 12px; text-align:left; font-size:12px; font-weight:650; cursor:pointer; }
+.railway-card button span { float:right; }
+.railway-card small { display:block; margin-top:9px; font-size:10px; line-height:1.5; color:#bccbb7; }
+footer { border-top:1px solid #21423b20; padding:12px; background:var(--paper); }
+footer button { border:0; background:transparent; font-size:11px; padding:7px; }
+.float-btn { top:104px; left:20px; border:1px solid #29493630; border-radius:6px; background:var(--paper); font-size:12px; font-weight:500; }
+#mapctl { top:105px; right:22px; gap:10px; }
+#compass { filter:drop-shadow(0 3px 7px #254c3020); }
+#compass .ring { stroke-width:.7; stroke:#728478; }
+.ctl-group { border:1px solid #29493625; border-radius:6px; box-shadow:0 4px 14px #16382e15; }
+.ctl-group button { width:36px; height:36px; font-size:19px; }
+.ctl-group button + button { border-top:1px solid #21423b20; }
+#place-card { top:105px; border:1px solid #29493630; border-top:3px solid var(--granite); border-radius:7px; padding:21px; }
+.label-town { font-size:19px; letter-spacing:.04em; }
+.label-water { color:#245760; font-size:13px; text-shadow:0 1px 4px #ecf3e4,0 1px 8px #ecf3e4; }
+.label-site { background:#f4efdbec; border:1px solid #526f5960; border-radius:5px; box-shadow:0 2px 8px #143b2720; color:#324c3e; padding:5px 10px 5px 23px; font-size:10px; }
+.label-site::before { width:5px; height:5px; border:0; background:var(--granite); margin-top:-2px; }
+.label-site::after { background:#62715b; }
+#credit { display:block; right:10px; bottom:6px; font-size:9px; color:#445d51; background:#f3f0e5d9; z-index:8; }
+.transport { gap:7px; flex-wrap:wrap; }
+.transport button { border:1px solid #21423b30; box-shadow:none; font-size:12px; min-height:38px; }
+.transport button.primary { background:var(--granite); }
+.journey-era { font-size:9px; color:var(--granite); letter-spacing:.13em; margin:0; }
+#chapters { display:flex; gap:4px; padding:4px 0; }
+#chapters button { flex:1; border:0; border-bottom:2px solid #dce1d5; background:none; padding:8px 0; font-size:10px; color:var(--ink-soft); cursor:pointer; }
+#chapters button[aria-current=step] { color:var(--granite); border-color:var(--granite); font-weight:700; }
+.steps { gap:3px; }
+.steps li button { padding:6px 4px; font-size:12px; }
+.steps .num { border:1px solid #8a99866b; font-size:10px; }
+.steps li.current button { background:#eee8d3; }
+.steps li.current .num { border:0; background:var(--granite); color:#fff; }
+#caption { border:1px solid #29493630; border-radius:9px; padding:0 18px 14px; background:#faf9f1f5; box-shadow:var(--shadow); bottom:34px; }
+.cap-progress { height:4px; border:0; margin:0 -18px 14px; background:#d4dacb; }
+.cap-progress i { background:var(--granite); }
+.cap-text { font:16px/1.5 var(--serif); }
+.cap-source { font-size:10px; color:#6e7866; }
+.cap-ctl button { border:1px solid #24483b30; box-shadow:none; }
+.cap-paused { background:#e7ebdf; border:0; color:#52664f; font-size:10px; font-weight:400; padding:8px 18px; margin:12px -18px -14px; }
+#cap-detail { display:none; }
+#talk { border:1px solid #29493630; box-shadow:var(--shadow); border-radius:8px; }
+#talk::after { border-width:0 1px 1px 0; border-color:#29493630; }
+.range { gap:10px; margin:6px 0; }
+.range select { grid-column:1/-1; }
+.check { min-height:30px; }
+.note, .tip { font-size:11px; line-height:1.6; }
+#btn-exit-clean { display:none; position:fixed; top:16px; right:16px; z-index:8; border:1px solid #29493640; background:#f3f0e5e0; color:var(--ink); padding:10px 14px; border-radius:6px; cursor:pointer; }
+body.clean #masthead, body.clean #view-title { display:none; }
+body.clean #btn-exit-clean { display:block; opacity:.25; }
+body.clean #btn-exit-clean:hover, body.clean #btn-exit-clean:focus-visible { opacity:1; }
+body.journey-on #view-title { opacity:.8; }
+dialog { border:1px solid #29493630; border-radius:10px; }
+dialog::backdrop { background:#16382e80; backdrop-filter:blur(4px); }
+#loading { display:flex; flex-direction:column; gap:20px; justify-content:center; background:#e0e7dc; text-align:center; padding:30px; }
+#loading button { border:0; border-radius:6px; background:var(--ink); color:#fff; padding:12px 22px; cursor:pointer; }
+@media (max-width:1000px) and (min-width:701px) { #view-name { font-size:27px; } #view-description { max-width:260px; } .era-control label { display:none; } }
+@media (max-width:700px) {
+  #masthead { height:104px; padding:13px 16px 10px; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+  .brand { font-size:13px; gap:8px; } .brand small { font-size:7px; margin-top:3px; } .brand-mark { width:33px; height:33px; font-size:16px; }
+  .era-control { position:absolute; left:16px; bottom:10px; margin:0; } .era-control label { display:none; } .era-control select { padding:6px 8px; font-size:11px; background:#e8ebdf; border:0; }
+  #btn-home { margin-left:auto; padding:6px; border:0; font-size:12px; }
+  #view-title, body.collapsed #view-title { left:16px; top:172px; max-width:calc(100vw - 92px); }
+  #view-title .eyebrow { font-size:8px; } #view-name { font-size:25px; margin:6px 0; } #view-description { font-size:10px; max-width:220px; }
+  #panel { top:115px; bottom:30px; left:10px; right:65px; width:auto; max-height:none; z-index:9; }
+  #panel header { padding:16px; } #panel header h1 { font-size:23px; }
+  .panes section { padding:15px; }
+  .float-btn { top:119px; left:16px; padding:9px 12px; z-index:6; }
+  #mapctl { top:119px; right:10px; gap:8px; }
+  .ctl-group button { width:38px; height:38px; }
+  .ctl-group:last-child { display:flex; }
+  #compass svg { width:46px; height:46px; }
+  #place-card { top:auto; bottom:32px; left:10px; right:10px; max-height:42vh; width:auto; padding:17px; z-index:9; }
+  #caption, body:not(.clean):not(.collapsed) #caption { bottom:32px; left:50%; width:calc(100vw - 20px); padding:0 12px 12px; gap:8px; z-index:6; }
+  .cap-progress { margin:0 -12px 10px; }
+  .cap-step { display:block; } #cap-count { display:block; font-size:8px; margin-bottom:3px; } #cap-title { font-size:16px; }
+  .cap-text { font:14px/1.45 var(--serif); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  #caption.expanded .cap-text { display:block; max-height:23vh; overflow:auto; }
+  .cap-source { display:none; } #caption.expanded .cap-source { display:block; font-size:9px; }
+  #cap-detail { display:block; float:right; border:0; background:none; padding:2px 0 3px 8px; color:var(--granite); font-size:10px; cursor:pointer; }
+  .cap-ctl { flex-direction:row; gap:4px; } .cap-ctl button, .cap-ctl button.primary { width:32px; height:36px; border-radius:6px; }
+  .cap-paused { display:none; }
+  #talk { max-width:calc(100% - 24px); left:12px; bottom:calc(100% + 10px); padding:8px 12px; } .talk-says { font-size:13px; }
+  #credit { max-width:calc(100vw - 12px); right:6px; bottom:5px; font-size:8px; }
+  body.journey-on #view-title { display:none; }
+  #welcome { padding:20px; } #welcome .lede { font-size:16px; }
+}
+@media (prefers-reduced-motion:reduce) { button { transition:none; } }
+
+#panel .railway-card { margin:4px 0; }
+#panel .railway-card h2 { margin-top:6px; }
+.explore-intro p:last-child { font-size:18px; }

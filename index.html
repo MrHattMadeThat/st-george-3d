@@ -3,32 +3,40 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>St. George 1874 Stage</title>
-  <meta name="description" content="A cartoon 3D landscape of St. George, New Brunswick in the Granite Town era, 1874-1876." />
+  <title>St. George · The Granite Coast</title>
+  <meta name="description" content="Explore St. George, New Brunswick: an illustrated 3D landscape of granite, water and the railway." />
   <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/overhaul.css" />
 </head>
 <body>
   <div id="stage" aria-label="3D map of St. George and area"></div>
 
+  <header id="masthead">
+    <a class="brand" href="?nowelcome" aria-label="St. George home"><span class="brand-mark">SG</span><span>ST. GEORGE<small>THE GRANITE COAST</small></span></a>
+    <div class="era-control"><label for="era">Landscape era</label><select id="era"><option value="1874">1874 · Granite by water</option><option value="1880" selected>1880+ · The railway arrives</option></select></div>
+    <button type="button" id="btn-home">↗ <span>Overview</span></button>
+  </header>
+  <div id="view-title"><span class="eyebrow">EXPLORE THE GRANITE COAST</span><h2 id="view-name">A town shaped by stone.</h2><p id="view-description">From the quarry ledges to the Bay of Fundy.</p></div>
+  <button type="button" id="btn-exit-clean">Return to explorer</button>
   <aside id="panel">
     <header>
       <div class="head-row">
-        <p class="eyebrow">Charlotte County, New Brunswick</p>
+        <p class="eyebrow">YOUR FIELD GUIDE</p>
         <button type="button" id="btn-collapse" class="icon-btn" title="Hide this panel" aria-label="Hide this panel">«</button>
       </div>
-      <h1>St. George, <span class="nowrap">1874–76</span></h1>
+      <h1>Discover St. George</h1>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Panel sections">
       <button type="button" role="tab" id="tab-journey" aria-controls="pane-journey" aria-selected="true">The Journey</button>
-      <button type="button" role="tab" id="tab-places" aria-controls="pane-places" aria-selected="false">Places</button>
-      <button type="button" role="tab" id="tab-view" aria-controls="pane-view" aria-selected="false">View</button>
+      <button type="button" role="tab" id="tab-places" aria-controls="pane-places" aria-selected="false">Explore</button>
+      <button type="button" role="tab" id="tab-view" aria-controls="pane-view" aria-selected="false">Layers</button>
     </div>
 
     <div class="panes">
       <section id="pane-journey" role="tabpanel" aria-labelledby="tab-journey">
         <p class="sub">Follow one block of red granite from the quarry to a schooner bound for Boston, summer 1874.</p>
-        <div class="transport">
+        <p class="journey-era">SUMMER 1874 · 13 SCENES</p><div id="chapters" aria-label="Journey chapters"></div><div class="transport">
           <button type="button" id="j-play" class="primary">▶ Play</button>
           <button type="button" id="j-stop" title="Back to the free camera (Esc)">■ Stop</button>
           <label class="speed">Speed
@@ -40,15 +48,20 @@
       </section>
 
       <section id="pane-places" role="tabpanel" aria-labelledby="tab-places" hidden>
-        <h2>Watch the work <span class="hint">close up</span></h2>
+        <div class="explore-intro"><p class="eyebrow">STONE · WATER · WORK</p><p>A living landscape of stone,<br>water and working people.</p></div>
+        <label class="search-label" for="place-search">Find a place</label><input id="place-search" type="search" placeholder="Town, quarry, wharf…" autocomplete="off" />
+        <p id="search-empty" class="tip" hidden>No matching places. Try “quarry” or “town”.</p>
+        <div class="railway-card"><p class="eyebrow">A NEW CONNECTION · 1880</p><h2>The railway arrives</h2><p>A steam locomotive, granite wagons and a station on the former Shore Line corridor.</p><button type="button" id="btn-railway">Visit the railway <span>↗</span></button><small>Station and train are illustrative. Corridor follows saved map data.</small></div>
+        <h2>Life along the river <span class="hint">close up</span></h2>
         <div id="work-stops" class="stops"></div>
-        <h2>Go to <span class="hint">the wide views</span></h2>
+
+        <h2>The wider landscape <span class="hint">fly to a place</span></h2>
         <div id="presets" class="stops"></div>
-        <p class="tip">Tip: click a <span class="pin-sample">gold pin</span> on the map to read about that place.</p>
+        <p class="tip">Tip: click a <span class="pin-sample">place marker</span> on the map to read about that place.</p>
       </section>
 
       <section id="pane-view" role="tabpanel" aria-labelledby="tab-view" hidden>
-        <h2>On the map</h2>
+        <h2>Make the map your own</h2><p class="tip">Use the era selector above to show the 1880 railway layer.</p>
         <label class="check"><input type="checkbox" id="opt-labels" checked /> Place names</label>
         <label class="check"><input type="checkbox" id="opt-route" /> Granite route (preview)</label>
         <div id="route-key" class="key" hidden>
@@ -61,7 +74,7 @@
           <input type="range" id="opt-tide" min="-3.5" max="3.5" step="0.1" value="1.5" />
         </label>
         <label class="check"><input type="checkbox" id="opt-tide-run" /> Let the tide run</label>
-        <h2>Picture</h2>
+        <h2>Picture</h2><label class="range">Quality<select id="quality"><option value="auto">Automatic</option><option value="low">Light</option><option value="high">Detailed</option></select></label>
         <label class="range">Trees <span id="trees-val"></span>
           <input type="range" id="opt-trees" min="0" max="1" step="0.05" value="0.7" />
         </label>
@@ -121,7 +134,7 @@
   <div id="caption" hidden aria-live="polite">
     <div id="talk" hidden><p class="talk-who" id="talk-who"></p><p class="talk-says" id="talk-says"></p></div>
     <div class="cap-progress" id="cap-progress" aria-hidden="true"></div>
-    <div class="cap-body">
+    <div class="cap-body"><button id="cap-detail" type="button" aria-expanded="false">Read more</button>
       <p class="cap-step"><span id="cap-count"></span> <span id="cap-title"></span></p>
       <p class="cap-text" id="cap-text"></p>
       <p class="cap-source" id="cap-source"></p>
@@ -135,7 +148,7 @@
   </div>
 
   <div id="fade" aria-hidden="true"></div>
-  <div id="loading">Laying out the landscape…</div>
+  <div id="loading" role="status"><span>Laying out the landscape…</span></div>
   <p id="credit">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: AWS Terrain Tiles</p>
 
   <dialog id="welcome" aria-labelledby="welcome-title">
@@ -181,7 +194,7 @@
 
   <dialog id="about">
     <h2>About this stage</h2>
-    <p>A cartoon model of the land around St. George as it was in the Granite Town years (1874–76), made as a stage for short animations about the granite trade: quarry, canal, river, sheds, wharf and ship.</p>
+    <p>An illustrated historical landscape of St. George in the Granite Town years, with an optional 1880 railway layer, made as a stage for short animations about the granite trade: quarry, canal, river, sheds, wharf and ship.</p>
     <h3>How it was made</h3>
     <ul>
       <li>Shorelines, lakes, rivers and marshes come from OpenStreetMap. Hills come from the AWS Terrain Tiles elevation model. Both are modern and have been simplified.</li>
@@ -190,12 +203,12 @@
       <li>The red granite belt and its ledges follow Gwen Martin’s Maps 2 and 3.</li>
       <li>The town, farms and villages are drawn with simple 1870s-style houses, barns and stores. They show how the place was laid out, not particular buildings. Streets are the old core streets named on Martin’s Map 4, following today’s lines.</li>
       <li>The Bay of Fundy Red Granite Co. mill, its dam and flume, the upper and lower bridges and the main wharf are placed from Martin’s Map 4. Their shapes are imagined.</li>
-      <li>There is no railway: the Grand Southern (“Shore Line”) was only completed through St. George in 1880.</li>
+      <li>The optional railway layer represents the Grand Southern after its arrival in 1880. The shown corridor follows saved OpenStreetMap former railway geometry; the station and train are illustrative. A separate quarry tramway existed by 1873 but is not modeled.</li>
     </ul>
     <h3>Known differences from 1874</h3>
     <ul>
-      <li>Above the falls, the river is drawn at today’s level. The pulp mill dam of 1902 flooded the ravine called The Gulley; in 1874 it was dry ground.</li>
-      <li>The falls are simplified into one cascade. Martin’s Map 4 shows upper falls, lower falls and the Gorge.</li>
+      <li>The Gulley is reconstructed as dry ground before the 1902 pulp mill dam. Terrain and shorelines remain approximate.</li>
+      <li>The Gorge, upper and lower falls, bridges and mill follow Martin’s Map 4. The map combines several periods; later industrial buildings are not all present in the 1874 scene.</li>
       <li>Names marked * are placed by eye from maps or written descriptions. Churches stand at today’s church sites; their 1874 sites are not confirmed.</li>
       <li>The people are illustrations of the work the sources describe: quarrymen drilling rows of holes and splitting blocks, a horse derrick, stonecutters at their bankers, teamsters, polishers and shippers (O’Halloran 1968), and the everyday life of a small town. They are not particular people.</li>
       <li>The Stone’s Journey follows the Bay of Fundy company’s way of working as Martin describes it. The sleds, shear legs, stone truck, rollers, skids and tackle that move the stone are the ordinary tools of the trade, shown to explain how it could have been done, not recorded details.</li>

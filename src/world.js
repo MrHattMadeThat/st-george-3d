@@ -166,8 +166,8 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uHeight: { value: heightTex }, uSea: { value: seaTex }, uExt: { value: extent }, uHalf: { value: half },
       uTime: { value: 0 }, uKind: { value: kind === 'sea' ? 0 : kind === 'lake' ? 1 : 2 },
-      uShallow: { value: new THREE.Color(kind === 'sea' ? '#6cc3bf' : '#78c2b8') },
-      uDeep: { value: new THREE.Color(kind === 'sea' ? '#2f7fb0' : '#3a80a4') },
+      uShallow: { value: new THREE.Color(kind === 'sea' ? '#6eaaa1' : '#7fa89a') },
+      uDeep: { value: new THREE.Color(kind === 'sea' ? '#285e72' : '#3b7277') },
       uFoam: { value: new THREE.Color('#f4fbff') },
     }]);
     uniforms.uLevel = seaLevel; // shared, so the tide moves every sea surface at once
@@ -446,7 +446,17 @@ function buildTrees(data, toon) {
   for (let k = T.n - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [order[k], order[r]] = [order[r], order[k]]; }
 
   const byKind = kinds.map(() => []);
-  for (const k of order) byKind[T.info[k * 2]]?.push(k);
+  const corridor = (data.railway?.points || []).map(([lat,lon]) => data.toLocal(lat,lon));
+  const railBounds = corridor.length ? {x0:Math.min(...corridor.map(p=>p.x))-95,x1:Math.max(...corridor.map(p=>p.x))+95,z0:Math.min(...corridor.map(p=>p.z))-95,z1:Math.max(...corridor.map(p=>p.z))+95} : null;
+  function nearRail(x,z) {
+    if (!railBounds || x<railBounds.x0 || x>railBounds.x1 || z<railBounds.z0 || z>railBounds.z1) return false;
+    return corridor.some((b,i) => {
+      if (!i) return false; const a = corridor[i-1], dx=b.x-a.x, dz=b.z-a.z;
+      const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz || 1),0,1);
+      return Math.hypot(x-a.x-t*dx,z-a.z-t*dz)<80;
+    });
+  }
+  for (const k of order) if (!nearRail(T.pos[k*3],T.pos[k*3+1])) byKind[T.info[k * 2]]?.push(k);
   const meshes = kinds.map((kind, t) => {
     const m = new THREE.InstancedMesh(kind.geo, mat, byKind[t].length);
     m.name = `trees:${kind.name}`;
@@ -484,7 +494,7 @@ function buildTrees(data, toon) {
     fraction = f;
     meshes.forEach((m, t) => { m.count = Math.round(byKind[t].length * f); });
   }
-  return { group, place, setFraction, kinds: kinds.map((k) => k.name), count: T.n };
+  return { group, place, setFraction, kinds: kinds.map((k) => k.name), count: byKind.reduce((n,a)=>n+a.length,0) };
 }
 
 function colored(geo, color) {
@@ -549,7 +559,7 @@ function buildClouds(meta, toon) {
 // Smooth-shaded ground coloured by the build's paint. Farm lots, cracked granite ledges and marsh
 // reeds are drawn per pixel from masks.png so they stay crisp at any distance. The lot grid,
 // hash and centre test match fieldAt() and the tree rule in the build.
-const FIELD_COLORS = ['#d6c468', '#c4d06c', '#8cbe56', '#96724c', '#b6b868', '#e2d68c'];
+const FIELD_COLORS = ['#b6b180', '#a8b17e', '#8eaa79', '#97806a', '#a3aa80', '#c2b990'];
 
 // Close-up ground: the paint is one pixel per 15 m (2.5 m in town), so on its own it is a blur
 // underfoot. This adds what the surface is made of, read from the paint colour and masks:
@@ -614,7 +624,7 @@ const GROUND_DETAIL = `
     if (soil > 0.0) { // dirt, mud, streets, yards: grain and pebbles
       vec3 d = col * (0.9 + 0.2 * vn(p / 2.2));
       d *= mix(1.0, 0.88 + 0.24 * vn(p / 0.035), lod(0.08));
-      d = pebbles(d, p, 0.3, 0.55 * lod(0.3));
+      d = pebbles(d, p, 0.3, 0.12 * lod(0.3));
       col = mix(col, d, soil);
     }
     if (sand > 0.0) { // wind and water ripples
@@ -641,7 +651,7 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
   const m = new THREE.MeshLambertMaterial({ map: paint });
   m.defines = { ...(hole ? { HOLE: 1 } : {}), ...(townMasks ? { TOWN: 1 } : {}), ...(detail ? { DETAIL: 1 } : {}) };
   const fields = FIELD_COLORS.map((c) => new THREE.Color(c));
-  const hedge = new THREE.Color('#5c7840');
+  const hedge = new THREE.Color('#758d69');
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uMasks = { value: masks };
     shader.uniforms.uPaintExt = { value: paintExt };
@@ -681,7 +691,7 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
         }
         // Detail with a feature size of s metres shows only once a pixel covers well under s,
         // so each layer fades in as the camera comes down and nothing shimmers far away.
-        float gFw;
+        float gFw = 1.0;
         float lod(float s) { return 1.0 - smoothstep(0.12 * s, 0.4 * s, gFw); }
         // pebbles: one per cell of size c, lighter stone with a shadow on its far side
         vec3 pebbles(vec3 col, vec2 p, float c, float amount) {
@@ -712,7 +722,9 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
           mk.g = max(mk.g, tm.b) * (1.0 - tm.r);
         #endif
         const float ANG = 0.5;
-        vec2 lot = vec2(vWPos.x * cos(ANG) - vWPos.z * sin(ANG), vWPos.x * sin(ANG) + vWPos.z * cos(ANG)) / vec2(150.0, 90.0);
+        // Slowly bent lot boundaries avoid a rigid checkerboard; repeated in the data builder for trees.
+        vec2 warped = vWPos.xz + vec2(24.0 * sin(vWPos.z / 170.0) + 12.0 * sin(vWPos.z / 63.0), 19.0 * sin(vWPos.x / 210.0));
+        vec2 lot = vec2(warped.x * cos(ANG) - warped.y * sin(ANG), warped.x * sin(ANG) + warped.y * cos(ANG)) / vec2(150.0, 90.0);
         ivec2 cellId = ivec2(floor(lot));
         vec2 f = fract(lot) * vec2(150.0, 90.0);
         float edgeDist = min(min(f.x, 150.0 - f.x), min(f.y, 90.0 - f.y));
@@ -722,22 +734,22 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
         float farmMid = texture2D(uMasks, (cw - uPaintExt.xy) * uPaintExt.zw).r;
         gFw = max(fwidth(vWPos.x), fwidth(vWPos.z)) + 1e-4;
         int crop = -1; float inLot = 0.0;
-        if (farmMid > max(0.35, open) && farmland > 0.12) {
+        if (farmMid > max(0.58, open) && farmland > 0.3) {
           int kind = int(lotHash(cellId, 11u) * 6.0);
           crop = kind;
           vec3 fc = uFields[kind];
           // furrows: faint stripes along each lot
-          fc *= 0.94 + 0.06 * sin(f.y * 1.3);
+          fc *= 0.98 + 0.02 * sin(f.y * 1.3);
           float aa = fwidth(edgeDist) + 0.001;
-          inLot = smoothstep(4.0 - aa, 4.0 + aa, edgeDist);
-          paintCol = mix(uHedge, fc, inLot);
+          inLot = smoothstep(2.0 - aa, 6.0 + aa, edgeDist);
+          paintCol = mix(paintCol, mix(uHedge, fc, inLot), smoothstep(0.3, 0.65, farmland) * 0.82);
         }
         if (mk.g > 0.25) { // ledges: joints and a speckle of feldspar and quartz
           float c = cracks(vWPos.xz / 11.0);
           float aa2 = fwidth(c) + 0.002;
           float speck = h22(floor(vWPos.xz / 1.6)).x;
           vec3 rockCol = paintCol * (0.92 + 0.16 * speck);
-          rockCol = mix(rockCol * 0.55, rockCol, smoothstep(0.04 - aa2, 0.04 + aa2, c));
+          rockCol = mix(rockCol * 0.82, rockCol, smoothstep(0.04 - aa2, 0.04 + aa2, c));
           paintCol = mix(paintCol, rockCol, smoothstep(0.25, 0.6, mk.g));
         }
         if (mk.b > 0.5) { // marsh: tufts of sedge in little clumps, pools between
@@ -749,7 +761,7 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
           paintCol = mix(paintCol, vec3(0.16, 0.3, 0.33), pool * 0.8);
         }
         #ifdef DETAIL
-          paintCol = groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk);
+          paintCol = mix(paintCol, groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk), 0.45);
         #endif
         diffuseColor.rgb *= paintCol;`);
   };
@@ -839,12 +851,12 @@ const WATER_FS = /* glsl */ `
       vec2 q = vWorld.xz * 0.011;
       float n = vnoise(q + vec2(uTime * 0.05, uTime * 0.035)) * 0.6 + vnoise(q * 2.6 - vec2(uTime * 0.06, -uTime * 0.045)) * 0.4;
       float near = 1.0 - smoothstep(2500.0, 9000.0, vFogDepth); // glints only up close; far off they sparkle
-      col += (smoothstep(0.66, 0.68, n) - smoothstep(0.7, 0.73, n)) * 0.08 * near;
+      col += (smoothstep(0.66, 0.68, n) - smoothstep(0.7, 0.73, n)) * 0.035 * near;
 
       // a lacy foam edge where the water meets the shore
       float edge = 1.0 - smoothstep(0.0, uKind == 0 ? 1.1 : 0.6, d);
       float fn = vnoise(vWorld.xz * 0.06 + vec2(uTime * 0.25, -uTime * 0.2));
-      float foam = step(0.5, edge * (0.55 + 0.7 * mix(0.5, fn, near)));
+      float foam = smoothstep(0.55, 0.95, edge) * smoothstep(0.35, 0.8, fn) * 0.32;
 
       if (uKind == 2) { // rivers: streaks running downstream, whitewater on the steep parts
         float s = fract(vFlow / 55.0 - uTime * 0.9 + vnoise(vWorld.xz * 0.04) * 0.7);
@@ -854,7 +866,7 @@ const WATER_FS = /* glsl */ `
         col = mix(col, mix(uShallow, uFoam, 0.6), vRapid * 0.5);
       }
       if (uKind == 2) foam = max(step(0.5, edge * (0.55 + 0.7 * fn)) * 0.35, foam * step(0.3, vRapid));
-      col = mix(col, uFoam, foam * 0.85);
+      col = mix(col, uFoam, foam * 0.7);
       float alpha = mix(0.5, 0.94, smoothstep(0.2, 6.0, d));
       if (uKind == 2) alpha = max(alpha, 0.85);
       gl_FragColor = vec4(col, max(alpha, foam * 0.9));

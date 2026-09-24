@@ -54,7 +54,28 @@ function windows(w, d, rows, color = '#34414d', door = true) {
   for (const s of [1, -1]) for (let r = 0; r < rows.length; r++) for (let k = 0; k < n; k++) {
     const z = -d / 2 + (d / n) * (k + 0.5);
     if (door && s > 0 && r === 0 && k === Math.floor(n / 2)) { parts.push(box(0.12, 2.2, 1.1, (s * w) / 2, 0.2, z, '#5b3a26')); continue; }
-    parts.push(box(0.12, 1.3, 0.9, (s * w) / 2, rows[r], z, color));
+    parts.push(box(0.14, 1.58, 1.18, (s * w) / 2, rows[r] - 0.12, z, '#e8e0cb'));
+    parts.push(box(0.18, 1.3, 0.9, (s * w) / 2, rows[r], z, color));
+    parts.push(box(0.21, 0.06, 1.0, (s * w) / 2, rows[r]+0.62, z, '#eee5d1'));
+    parts.push(box(0.21, 1.3, 0.055, (s * w) / 2, rows[r], z, '#eee5d1'));
+  }
+  for (const side of [-1, 1]) for (const y of rows) for (const x of [-w * 0.27, w * 0.27]) {
+    parts.push(box(1.18, 1.58, 0.14, x, y-0.12, side*d/2, '#e8e0cb'));
+    parts.push(box(0.9, 1.3, 0.18, x, y, side*d/2, color));
+    parts.push(box(0.055, 1.3, 0.21, x, y, side*d/2, '#eee5d1'));
+    parts.push(box(0.95, 0.06, 0.21, x, y+0.62, side*d/2, '#eee5d1'));
+  }
+  if (door) {
+    parts.push(box(1.25, 2.3, 0.19, 0, 0.1, d/2, '#e6dbc0'), box(0.95, 2.15, 0.23, 0, 0.1, d/2, '#425b52'));
+    parts.push(box(3.4, 0.3, 2.2, 0, 0, d/2+0.9, '#93856b'));
+    parts.push(box(3.8, 0.18, 2.7, 0, 2.65, d/2+0.95, '#5b665a'));
+    for (const x of [-1.4,1.4]) parts.push(box(0.12, 2.5, 0.12, x, 0.2, d/2+1.8, '#e5dbc5'));
+  }
+  // Corner boards and subtle horizontal clapboard courses catch the light.
+  const height = Math.max(...rows) + 2;
+  for (const x of [-w/2,w/2]) for (const z of [-d/2,d/2]) parts.push(box(0.18,height,0.18,x,0,z,'#dfd6bf'));
+  for(let y=0.6;y<height;y+=0.48) {
+    for(const side of [-1,1]) parts.push(box(0.025,0.035,d,side*(w/2+0.012),y,0,'#b9b4a0'));
   }
   return merge(parts);
 }
@@ -67,20 +88,15 @@ function granite() {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#b3503c'; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = '#af7963'; g.fillRect(0, 0, 256, 256);
   let s = 7;
   const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   for (let k = 0; k < 2600; k++) { // grains
-    g.fillStyle = ['#c86a52', '#9e4436', '#d9b8a8', '#7a3428', '#c0604a'][Math.floor(r() * 5)];
-    g.fillRect(r() * 256, r() * 256, 1 + r() * 2.5, 1 + r() * 2.5);
+    g.fillStyle = ['#b67b65', '#9f6656', '#c18c76', '#8c5d50', '#b17a64'][Math.floor(r() * 5)];
+    g.fillRect(r() * 256, r() * 256, 0.5 + r() * 1.2, 0.5 + r() * 1.2);
   }
-  g.strokeStyle = 'rgba(60, 25, 18, 0.75)'; g.lineWidth = 2.5;
-  const beds = [0, 96, 170, 256];
-  for (const y of beds.slice(0, 3)) { g.beginPath(); g.moveTo(0, y + 2); g.bezierCurveTo(90, y + r() * 10 - 5, 170, y + r() * 10 - 5, 256, y + 2); g.stroke(); } // bedding joints
-  for (let row = 0; row < 3; row++) for (let k = 0; k < 2; k++) { // vertical joints, staggered
-    const y0 = beds[row], y1 = beds[row + 1], x = (k * 128 + row * 57 + r() * 40) % 256;
-    g.beginPath(); g.moveTo(x, y0); g.lineTo(x + (r() - 0.5) * 12, y1); g.stroke();
-  }
+  // Granite grain is small and low contrast. Fractures are modeled in the face, never a brick texture.
+  g.globalAlpha = 0.12; g.fillStyle = '#c49980'; g.fillRect(0, 0, 256, 256); g.globalAlpha = 1;
   graniteTex = new THREE.CanvasTexture(c);
   graniteTex.wrapS = graniteTex.wrapT = THREE.RepeatWrapping;
   graniteTex.colorSpace = THREE.SRGBColorSpace;
@@ -104,6 +120,14 @@ function worldUV(geo, size) {
 // ------------------------------------------------------------------ building kinds
 
 // Each kind: walls (painted per building), roof (per building), trim (windows, doors, foundation).
+let contactMap;
+function contactTexture() {
+  if (contactMap) return contactMap;
+  const canvas = document.createElement('canvas'); canvas.width=canvas.height=64;
+  const ctx=canvas.getContext('2d'), gradient=ctx.createRadialGradient(32,32,8,32,32,32);
+  gradient.addColorStop(0,'rgba(25,35,25,0.38)'); gradient.addColorStop(0.65,'rgba(25,35,25,0.22)'); gradient.addColorStop(1,'rgba(25,35,25,0)');
+  ctx.fillStyle=gradient;ctx.fillRect(0,0,64,64);contactMap=new THREE.CanvasTexture(canvas);return contactMap;
+}
 const GRANITE = '#b07a6c';
 function kinds() {
   const house = { w: 8, d: 10.5, h: 6.4, rh: 3.3 };
@@ -116,7 +140,7 @@ function kinds() {
     house: {
       walls: merge([box(house.w, house.h, house.d), gableEnds(house.w, house.d, house.h, house.rh, '#ffffff')]),
       roof: merge([gableRoof(house.w, house.d, house.h, house.rh, '#ffffff'), box(0.9, 2.4, 0.9, 0, house.h + house.rh - 1.2, 2.2, '#ffffff')]),
-      trim: merge([found(house), windows(house.w, house.d, [1.4, 4.2]), box(0.12, 1.2, 0.9, 0, house.h + 0.7, house.d / 2, '#34414d'), box(0.12, 1.2, 0.9, 0, house.h + 0.7, -house.d / 2, '#34414d')]),
+      trim: merge([found(house), windows(house.w, house.d, [1.4, 4.2]), box(0.9, 1.2, 0.12, 0, house.h + 0.7, house.d / 2, '#34414d'), box(0.9, 1.2, 0.12, 0, house.h + 0.7, -house.d / 2, '#34414d')]),
       walls0: ['#f2efe6', '#efe2b8', '#f0d98a', '#d9dcd0', '#c9d6b3', '#b9c8d4', '#f2efe6'],
     },
     cape: {
@@ -175,6 +199,17 @@ export function buildStructures(data, { exag, groundY, toon }) {
   const K = kinds();
   const byKind = {};
   for (const b of meta.buildings) (byKind[b[0]] ??= []).push(b);
+  const shadows = [];
+  for (const [kind,x,z,rot] of meta.buildings) {
+    const size = {house:[14,16],cape:[14,13],store:[15,20],barn:[17,23],church:[18,32]}[kind];
+    if (!size) continue;
+    const g = new THREE.PlaneGeometry(...size, 3, 3).rotateX(-Math.PI/2).rotateY(rot).translate(x,0,z);
+    const pos = g.attributes.position;
+    for (let i=0;i<pos.count;i++) pos.setY(i,data.heightAt(pos.getX(i),pos.getZ(i))*exag+0.08);
+    shadows.push(g);
+  }
+  const shade = new THREE.Mesh(mergeGeometries(shadows),new THREE.MeshBasicMaterial({map:contactTexture(),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));
+  shade.name='Building contact shadows'; group.add(shade); shadows.forEach(g=>g.dispose());
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), P = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1), C = new THREE.Color();
   for (const [kind, list] of Object.entries(byKind)) {
     const k = K[kind];
@@ -277,7 +312,13 @@ export function buildStructures(data, { exag, groundY, toon }) {
   const wharf = (w, name) => {
     const { x, z, rot, length: L, width: W } = w;
     const deck = (meta.highWater + 1.6) * exag;
-    const parts = [box(W, 0.6, L, 0, 0, L / 2, '#9a7a55')];
+    const parts = [box(W, 0.6, L, 0, 0, L / 2, '#887455')];
+    for (let z=0.4;z<L;z+=0.65) parts.push(box(W-0.1,0.035,0.025,0,0.6,z,'#63563f'));
+    for (let i=0;i<7;i++) {
+      const side=i%2?1:-1;
+      parts.push(box(1.2,0.9+(i%3)*0.25,1.2,side*(W/2-1.5),0.62,8+i*5,'#9a7f58'));
+      parts.push(box(1.24,0.08,1.24,side*(W/2-1.5),1.1,8+i*5,'#605b47'));
+    }
     for (let k = 0; k * 6 <= L; k++) {
       const pz = Math.min(k * 6, L), wx = x + Math.sin(rot) * pz, wz = z + Math.cos(rot) * pz;
       const bot = Math.max(Math.min(data.heightAt(wx, wz), -2), -8) * exag; // cribs down to about the low-tide bottom
@@ -295,6 +336,25 @@ export function buildStructures(data, { exag, groundY, toon }) {
     const geo = merge([box(10.4, 10, 16.4, 0, -9.4, 0, GRANITE), box(10, 7, 16, 0, 0, 0, '#a4382c'), gableEnds(10, 16, 7, 3.4, '#a4382c'),
       gableRoof(10, 16, 7, 3.4, '#4d4a48'), windows(10, 16, [1.5, 4.5], '#f2efe6', true)]);
     add(geo, x, baseY(x, z, rot, 10, 16), z, rot + Math.PI / 2, 'The Red Store');
+  }
+
+  // Fractured rock banks give the Gorge a visible depth and silhouette.
+  // Photo: Martin (2013), printed p.16 (c.1890s); form reference, not a measured 1874 survey.
+  if (meta.gorge) {
+    const rocks=[];
+    for (let i=4;i<meta.gorge.length-4;i++) {
+      const [x,z]=meta.gorge[i], a=meta.gorge[i-1], b=meta.gorge[i+1];
+      const dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
+      for (const side of [-1,1]) {
+        const rx=x-side*dz/len*19, rz=z+side*dx/len*19;
+        for (let layer=0;layer<2;layer++) {
+          const rock = new THREE.IcosahedronGeometry(1,0).scale(6+(i%3),3.5+layer*1.5,5).rotateY(i*1.73);
+          rock.translate(rx,data.heightAt(rx,rz)*exag-2-layer*3,rz);
+          rocks.push(tint(rock,['#777769','#888577','#666c61'][i%3]));
+        }
+      }
+    }
+    group.add(new THREE.Mesh(merge(rocks),mat));
   }
 
   // ---- the old white pine by the Gorge
@@ -315,11 +375,30 @@ export function buildStructures(data, { exag, groundY, toon }) {
     // three benches, each stepped back into the hill (local -z is uphill), in jointed red granite
     const rock = [];
     // each bench reaches well down into the slope so none of them floats on the downhill side
-    for (let b = 0; b < 3; b++) rock.push(new THREE.BoxGeometry(40 - b * 6, 5 + 6 + b * 5, 10).translate(0, b * 5 + 4 - (11 + b * 5) / 2, -8 - b * 9));
-    for (const s of [-1, 1]) rock.push(new THREE.BoxGeometry(6, 22, 34).translate(s * 23, 4, -18));
+    let seed = 43;
+    const rnd = () => ((seed = seed * 16807 % 2147483647) / 2147483647);
+    for (let b = 0; b < 3; b++) {
+      const width = 40 - b * 6, n = 7, step = width / n;
+      for(let i=0;i<n;i++) {
+        const h = 11 + b * 5;
+        const g = new THREE.BoxGeometry(step - 0.12, h, 10 + rnd()*2, 1, 1, 1);
+        const pos = g.attributes.position;
+        const lean = (rnd()-0.5)*0.8;
+        for(let k=0;k<pos.count;k++) {
+          const top = pos.getY(k)>0;
+          pos.setX(k,pos.getX(k)+(top?lean:-lean));
+          pos.setZ(k,pos.getZ(k)+(top ? Math.sin(i*4.3+b)*0.6 : 0));
+        }
+        g.computeVertexNormals(); g.translate(-width/2 + (i+0.5)*step,b*5+4-h/2,-8-b*9);
+        rock.push(g);
+      }
+    }
+    for (const side of [-1,1]) for (let i=0;i<5;i++) {
+      rock.push(new THREE.IcosahedronGeometry(5+rnd()*2,0).scale(0.65,1.6,1).rotateY(rnd()).translate(side*(23+rnd()),2+i*1.5,-4-i*6));
+    }
     // (the quarry floor is painted into the ground as bare rock by the build)
     for (let k = 0; k < 7; k++) rock.push(new THREE.BoxGeometry(2.6, 1.6, 1.8).translate(-12 + k * 3.8, -0.2 + 0.8, 4 + (k % 3) * 2.5)); // blocks split out, waiting
-    const face = new THREE.Mesh(worldUV(mergeGeometries(rock.map((g) => g.toNonIndexed())), 12), new THREE.MeshToonMaterial({ map: granite(), gradientMap: toon }));
+    const face = new THREE.Mesh(worldUV(mergeGeometries(rock.map((g) => g.index ? g.toNonIndexed() : g)), 4), new THREE.MeshToonMaterial({ map: granite(), gradientMap: toon }));
     face.name = 'quarry face';
     face.position.set(x, h(x, z) - 1.5, z);
     face.rotation.y = rot;
