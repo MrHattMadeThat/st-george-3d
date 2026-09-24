@@ -1,0 +1,4 @@
+node_modules/
+dist/
+data/preview.png
+data/crop.png

@@ -1,0 +1,105 @@
+:root {
+  --paper: #f6efdf;
+  --paper-2: #eadfc6;
+  --ink: #2d2418;
+  --ink-soft: #5d5040;
+  --granite: #b3503c;
+  --granite-dark: #8a3a2a;
+  --gold: #e3b341;
+  --sea: #1f5f86;
+  --shadow: 0 6px 24px rgba(30, 22, 10, 0.25);
+  --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe3ea; color: var(--ink); font-family: var(--sans); }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; }
+
+#panel {
+  position: fixed; top: 16px; left: 16px; bottom: 16px; width: 300px;
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto;
+  padding: 18px 18px 14px; background: var(--paper); border: 2px solid var(--ink);
+  border-radius: 14px; box-shadow: var(--shadow); z-index: 5;
+}
+#panel header h1 { font-family: var(--serif); font-size: 26px; margin: 2px 0 6px; line-height: 1.1; }
+.eyebrow { margin: 0; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--granite-dark); font-weight: 700; }
+.sub { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-soft); }
+#panel h2 { font-family: var(--serif); font-size: 15px; margin: 0 0 8px; border-bottom: 1px dashed var(--ink-soft); padding-bottom: 4px; }
+section { display: flex; flex-direction: column; gap: 6px; }
+
+.presets { display: flex; flex-direction: column; gap: 4px; }
+.presets button {
+  display: flex; gap: 8px; align-items: center; text-align: left; width: 100%;
+  padding: 7px 10px; border: 1.5px solid var(--ink); border-radius: 8px;
+  background: #fffaf0; color: var(--ink); font: 600 13px var(--sans); cursor: pointer;
+}
+.presets button kbd { font: 700 11px var(--sans); background: var(--paper-2); border: 1px solid var(--ink-soft); border-radius: 4px; padding: 0 5px; }
+.presets button:hover, .presets button:focus-visible { background: var(--gold); outline: none; }
+.presets button.active { background: var(--granite); color: #fff; }
+.presets button.active kbd { background: #fff; color: var(--ink); }
+
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--granite); width: 16px; height: 16px; }
+.range { display: grid; grid-template-columns: 1fr auto; font-size: 13px; gap: 2px 8px; }
+.range span { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.range input { grid-column: 1 / -1; accent-color: var(--granite); width: 100%; }
+.note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--granite-dark); background: #fff3c4; border: 1px solid var(--gold); border-radius: 6px; padding: 6px 8px; }
+.key { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-soft); padding-left: 24px; }
+.key i { display: inline-block; width: 18px; height: 6px; border-radius: 3px; margin-right: 6px; vertical-align: middle; border: 1px solid var(--ink-soft); }
+
+#place-card { background: #fffaf0; border: 1.5px solid var(--ink); border-radius: 10px; padding: 10px 12px; }
+#place-card h2 { border: 0; margin: 0; padding: 0; color: var(--granite-dark); }
+#place-card p { margin: 0; font-size: 13px; line-height: 1.45; }
+#place-card .source { font-size: 11px; color: var(--ink-soft); font-style: italic; }
+
+footer { margin-top: auto; display: flex; gap: 6px; }
+footer button {
+  flex: 1; padding: 8px; border-radius: 8px; border: 1.5px solid var(--ink); background: var(--paper-2);
+  font: 600 12px var(--sans); color: var(--ink); cursor: pointer;
+}
+footer button:hover { background: var(--gold); }
+
+/* map labels */
+.label { font-family: var(--serif); pointer-events: none; white-space: nowrap; user-select: none;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px rgba(255,255,255,0.8); }
+.label-town { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; color: #2a1f14; }
+.label-village { font-size: 14px; font-weight: 700; color: #3a2e20; }
+.label-water { font-size: 15px; font-style: italic; color: #174d6e; letter-spacing: 0.06em; text-shadow: 0 0 3px #e6f4fa, 0 0 6px #e6f4fa; }
+.label-island { font-size: 13px; font-style: italic; color: #3a2e20; }
+.label-site {
+  pointer-events: auto; cursor: pointer; font: 700 12px var(--sans); color: var(--ink);
+  background: var(--gold); border: 1.5px solid var(--ink); border-radius: 999px; padding: 3px 9px 3px 22px;
+  text-shadow: none; position: relative; box-shadow: 0 2px 0 var(--ink);
+}
+.label-site::before { content: ''; position: absolute; left: 7px; top: 50%; width: 8px; height: 8px; margin-top: -4px; background: var(--granite); border: 1.5px solid var(--ink); transform: rotate(45deg); }
+.label-site:hover, .label-site:focus-visible { background: #fff3c4; outline: none; }
+
+#compass { position: fixed; right: 18px; top: 16px; z-index: 5; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.25)); }
+#compass svg { transition: none; }
+#compass circle { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+#compass .n { fill: var(--granite); stroke: var(--ink); stroke-width: 1; }
+#compass .s { fill: var(--paper-2); stroke: var(--ink); stroke-width: 1; }
+#compass text { font: 700 7px var(--sans); fill: #fff; }
+
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font: 600 18px var(--serif); color: var(--ink); background: #cfe3ea; z-index: 10; }
+#loading[hidden] { display: none; }
+#credit { position: fixed; right: 10px; bottom: 6px; margin: 0; font-size: 11px; color: var(--ink-soft); background: rgba(246,239,223,0.8); padding: 2px 6px; border-radius: 4px; z-index: 5; }
+#credit a { color: inherit; }
+
+dialog { max-width: 620px; border: 2px solid var(--ink); border-radius: 14px; background: var(--paper); color: var(--ink); padding: 20px 24px; box-shadow: var(--shadow); }
+dialog::backdrop { background: rgba(20, 16, 10, 0.4); }
+dialog h2 { font-family: var(--serif); margin-top: 0; }
+dialog h3 { font-family: var(--serif); font-size: 15px; margin: 14px 0 4px; }
+dialog li, dialog p { font-size: 13px; line-height: 1.5; }
+dialog button { padding: 8px 18px; border-radius: 8px; border: 1.5px solid var(--ink); background: var(--gold); font: 600 13px var(--sans); cursor: pointer; }
+
+/* clean view for recording animations */
+body.clean #panel, body.clean #compass { display: none; }
+
+@media (max-width: 700px) {
+  #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 45vh; }
+  #compass { top: 8px; right: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
