@@ -276,6 +276,21 @@ function journeyUI() {
     $('cap-source').textContent = `Source: ${s.source}`;
   }
 }
+// the polers' conversation on the long river steps: one line at a time, above the caption
+let talkLine = null;
+function talkUI() {
+  const { step, t } = journey.state;
+  const lines = journey.steps[step]?.talk;
+  const line = lines ? [...lines].reverse().find(([at]) => t >= at) ?? null : null;
+  if (line === talkLine) return;
+  talkLine = line;
+  $('talk').hidden = !line;
+  if (line) {
+    $('talk-who').textContent = line[1];
+    $('talk-says').textContent = line[2];
+    $('talk').classList.toggle('reply', line[1] !== lines[0][1]); // the second speaker's box leans the other way
+  }
+}
 function stepBy(d) {
   const { step, playing } = journey.state;
   if (step < 0) return;
@@ -393,6 +408,8 @@ function turnCompass() {
 
 // ------------------------------------------------------------------ loop
 
+const fadeEl = $('fade'); // the journey's dip to paper when a long trip skips ahead
+
 let elapsed = 0, last = performance.now();
 flyTo(PRESETS.find((p) => p.key === (params.get('preset') || '1')) || PRESETS[0], 0);
 if (params.has('clean')) { document.body.classList.add('clean'); frame(); }
@@ -412,6 +429,8 @@ renderer.setAnimationLoop((now) => {
   if ($('opt-tide-run').checked) { tideClock += dt * ((2 * Math.PI) / 60); setTide(+(Math.sin(tideClock) * 3.5).toFixed(2)); }
   world.update(dt);
   if (!flight) journey.frame(dt);
+  talkUI();
+  if (fadeEl.style.opacity !== String(journey.state.fade)) fadeEl.style.opacity = journey.state.fade;
   life.update(dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);

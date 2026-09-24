@@ -29,6 +29,21 @@ const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const span = (t, a, b) => clamp01((t - a) / (b - a)); // 0..1 over the part of a step from a to b
 const lerp = (a, b, t) => a + (b - a) * t;
+// Horse teams move at a walk. A route too long to walk in its step's time gets a cut: the team
+// walks off, the picture dips to paper for a moment, and the team walks the last stretch in.
+const TEAM_WALK = 1.8; // m/s
+const RAMP = 0.12; // share of a stretch spent starting or stopping
+const walkIn = (t) => { const v = 1 / (1 - RAMP / 2); return t < RAMP ? (v * t * t) / (2 * RAMP) : v * (t - RAMP / 2); }; // from rest, ends walking
+const walkOut = (t) => 1 - walkIn(1 - t); // arrives walking, ends at rest
+const cruise = (t) => (t < 0.5 ? walkIn(t * 2) : 1 + walkOut(t * 2 - 1)) / 2; // start, walk steadily, stop
+const DIP = 0.07; // half-width of the dip to paper, as a share of the step
+function travel(t, len, seconds) {
+  if (len <= TEAM_WALK * seconds * 0.85) return { u: cruise(t), fade: 0, side: 0 };
+  const shown = (TEAM_WALK * seconds * 0.42) / len; // share of the route seen at each end
+  const fade = 1 - Math.min(1, Math.abs(t - 0.5) / DIP);
+  return t < 0.5 ? { u: shown * walkIn(t / 0.5), fade: fade * fade * (3 - 2 * fade), side: 0 }
+    : { u: 1 - shown * (1 - walkOut((t - 0.5) / 0.5)), fade: fade * fade * (3 - 2 * fade), side: 1 };
+}
 const lerpAngle = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
 const unit = (ax, az, bx, bz) => { const d = Math.hypot(bx - ax, bz - az) || 1; return [(bx - ax) / d, (bz - az) / d]; };
 
@@ -243,31 +258,58 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   const rope0 = (fall) => fall(V.set(0, -999, 0), V2.set(0, -999, 0.01)); // hide a rope out of sight
 
   // ---- the crews
-  const state = { step: -1, t: 0, playing: false, speed: 1, onChange: () => {} };
+  const state = { step: -1, t: 0, playing: false, speed: 1, fade: 0, onChange: () => {} };
+  let lastSide = 0, sideStep = -1;
   const at = (k) => state.step === k;
   const running = { derrick: false, fall1: false, fall2: false, tackle: false };
   if (life) {
     const person = life.person;
-    // the scow's polers
-    for (const [lx, lz] of [[-1.9, -5.4], [1.9, 5.2]]) {
-      const ride = life.rideOn(scow, lx, 1.4, lz);
-      person('quarryman', { move: (f) => {
-        ride(f);
-        const want = f.moving ? 'pole' : 'idle';
-        if (f.action !== want) { f.action = want; life.crowd.setTool(f, f.moving ? 'pole' : null); }
-      }, y: life.rideY });
-    }
-    // at the quarry: a man steadies the block on the fall, walking with it
+    // The scow's polers walk the pole, one each side, taking turns: plant it by the bow, lean on
+    // it and walk aft as fast as the scow goes (so he stays over the same spot of river bottom
+    // while the boat slides on under him), then walk back to the bow with the pole trailing.
+    const BOW = 5.5, STERN = -5;
+    const scowWas = new THREE.Vector3(), scowV = { speed: 0, frame: -1 };
+    const PV = new THREE.Vector3();
+    [[-2.3, BOW, true], [2.3, 0.5, false]].forEach(([lx, lz0, push0], k) => {
+      const st = { lz: lz0, push: push0 };
+      person('quarryman', { tool: 'pole', y: life.rideY, move: (f, dt) => {
+        if (k === 0) { // once a frame: how fast the scow is going
+          const d = scowWas.distanceTo(scow.position);
+          scowV.speed = d > 20 || dt <= 0 ? 0 : scowV.speed + (d / dt - scowV.speed) * Math.min(1, dt * 4);
+          scowWas.copy(scow.position);
+        }
+        const going = scow.visible && scowV.speed > 0.15;
+        const was = st.lz;
+        if (going) {
+          if (st.push) { st.lz -= Math.min(Math.max(scowV.speed, 0.5), 1.4) * dt; if (st.lz <= STERN) st.push = false; }
+          else { st.lz += 1.3 * dt; if (st.lz >= BOW) st.push = true; }
+        }
+        f.onDeck = Math.abs(st.lz - was);
+        scow.updateMatrixWorld();
+        PV.set(lx, 1.4, st.lz).applyMatrix4(scow.matrixWorld);
+        f.x = PV.x; f.z = PV.z; f.rideY = PV.y;
+        f.heading = scow.rotation.y + (st.push ? Math.PI : 0); // pushing, he faces aft
+        f.hidden = !scow.visible;
+        f.poleOut = (lx < 0 ? 1 : -1) * (st.push ? 1 : -1); // which of his hands is the water side
+        const want = going ? (st.push ? 'polePush' : 'poleCarry') : 'idle';
+        if (f.action !== want) { f.action = want; life.crowd.setTool(f, going ? 'pole' : null); }
+      } });
+    });
+    // at the quarry: a man steadies the block on the fall. He walks at a steady pace from the face
+    // to the sled while the boom swings (the block itself swings faster than a man walks), and stays
+    // at the quarry when the sled leaves.
+    const beside = (x, z) => [x - Math.cos(qrot) * 2.6, z + Math.sin(qrot) * 2.6];
     person('quarryman', { move: (f) => {
-      const x = block.position.x, z = block.position.z;
-      f.x = x - Math.cos(qrot) * 2.6; f.z = z + Math.sin(qrot) * 2.6;
-      f.heading = Math.atan2(x - f.x, z - f.z);
+      const u = state.step > 0 ? 1 : at(0) ? span(state.t, 0.3, 0.88) : 0;
+      const w = u * u * (3 - 2 * u) * 0.3 + u * 0.7; // start and stop gently
+      [f.x, f.z] = beside(lerp(P0[0], S0[0], w), lerp(P0[1], S0[1], w));
+      f.heading = Math.atan2(block.position.x - f.x, block.position.z - f.z);
       f.action = at(0) && state.t > 0.12 && state.t < 0.92 ? 'guide' : 'idle';
     } });
     // the sled team and its teamster
     for (const sx of [-0.6, 0.6]) life.horse({ harness: true, move: life.rideOn(sled, sx, 0, 4.7), y: life.rideY, walking: (h) => h.moving });
     const teamster = life.rideOn(sled, 2.3, 0, 3.4);
-    person('quarryman', { hat: 'straw', move: (f) => { teamster(f); f.action = f.moving ? 'lead' : 'idle'; f.speed = 1.5; }, y: (f) => groundAt(f.x, f.z) });
+    person('quarryman', { hat: 'straw', move: (f, dt) => { teamster(f, dt); f.action = f.moving ? 'lead' : 'idle'; f.speed = 1.5; }, y: (f) => groundAt(f.x, f.z) });
     // two crews on the shear legs: two men haul the fall, one steadies the load
     const shearCrew = (bank, water, key, busy) => {
       const [ux, uz] = unit(bank[0], bank[1], water[0], water[1]);
@@ -319,7 +361,8 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       f.action = at(10) && state.t < 0.6 ? 'guide' : 'idle';
     }, y: (f) => (meta.highWater + 1.6) * exag() + 0.6 });
     // hands on the schooner: one hauls the tackle, one at the wheel, one forward
-    life.person('sailor', { move: (f) => { life.rideOn(schooner, -1.3, 2.4, 3.2, Math.PI / 2)(f); f.action = running.tackle || !at(10) ? 'haul' : 'idle'; }, y: life.rideY });
+    const hauler = life.rideOn(schooner, -1.3, 2.4, 3.2, Math.PI / 2);
+    life.person('sailor', { move: (f, dt) => { hauler(f, dt); f.action = running.tackle || !at(10) ? 'haul' : 'idle'; }, y: life.rideY });
     life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 1.4, 2.4, -9.5), y: life.rideY });
     life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 0.9, 2.4, 10, Math.PI), y: life.rideY });
     // the wagon's team and driver
@@ -375,14 +418,15 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Down to the canal', seconds: 11, source: `${MARTIN}, pp. 12–13 and Map 3`,
+      title: 'Down to the canal', seconds: 16, source: `${MARTIN}, pp. 12–13 and Map 3`,
       text: 'A horse team drags the sled down to a landing on the natural canal that joins Lake Utopia to the Magaguadavic River. The teamster walks alongside.',
       update(t) {
-        const u = ease(t), x = lerp(S0[0], SL[0], u), z = lerp(S0[1], SL[1], u);
+        const go = travel(t, Math.hypot(SL[0] - S0[0], SL[1] - S0[1]), 16);
+        const x = lerp(S0[0], SL[0], go.u), z = lerp(S0[1], SL[1], go.u);
         const [sx, sz] = unit(S0[0], S0[1], SL[0], SL[1]);
         sledTo(x, z, Math.atan2(sx, sz));
         blockOn(sled, 0.4);
-        return { target: [x, z], dist: 45, from: Math.atan2(sx, sz) + 2.3, tilt: 0.32 };
+        return { target: [x, z], dist: 45, from: Math.atan2(sx, sz) + 2.3, tilt: 0.32, fade: go.fade, side: go.side };
       },
     },
     {
@@ -406,8 +450,14 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'By scow through the canal', seconds: 10, source: `${MARTIN}, p. 13`,
+      title: 'By scow through the canal', seconds: 20, source: `${MARTIN}, p. 13`,
       text: 'In summer the rough stone went by water. The polers walk the scow along, pushing their poles against the bottom of the canal.',
+      // the polers talk as they work: [when in the step, who, what]
+      talk: [
+        [0.08, 'The young hand', 'Why not haul the block to the mill by road?'],
+        [0.36, 'The old hand', 'Over those hills? The roads are rough, and a block this heavy would wear out a team. On the water, it floats.'],
+        [0.68, 'The old hand', 'And there’s no railway here yet. The line won’t reach St. George until 1880.'],
+      ],
       update(t) {
         running.fall1 = false; idleFall(fall1, shears1.apex);
         const s = scowAt(0.26 * ease(t));
@@ -417,8 +467,12 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Down the Magaguadavic', seconds: 14, source: `${MARTIN}, p. 13`,
+      title: 'Down the Magaguadavic', seconds: 24, source: `${MARTIN}, p. 13`,
       text: '…then down the Magaguadavic River to the falls at St. George, and across the millpond to the landing below the company’s mill.',
+      talk: [
+        [0.06, 'The young hand', 'So the river is our road.'],
+        [0.3, 'The old hand', 'Before the railways, rivers were the easiest roads in New Brunswick. Heavy loads float, and going downstream the current helps push us along to the falls.'],
+      ],
       update(t) {
         const s = scowAt(0.26 + 0.74 * ease(t));
         put(scow, s.x, s.y, s.z, s.heading);
@@ -445,11 +499,11 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Into the mill', seconds: 9, source: `${MARTIN}, p. 13 and Map 4`,
+      title: 'Into the mill', seconds: 26, source: `${MARTIN}, p. 13 and Map 4`,
       text: 'A horse team draws the truck up from the landing and in through the big doors of the Bay of Fundy Red Granite Co.’s mill.',
       update(t) {
         running.fall2 = false; idleFall(fall2, shears2.apex);
-        const p = truckPath.at(ease(t));
+        const p = truckPath.at(travel(t, truckPath.length, 26).u);
         put(truck, p.x, groundAt(p.x, p.z), p.z, p.heading);
         blockOn(truck, 1.35, p.heading);
         block.visible = t < 0.97;
@@ -496,16 +550,17 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Through town to the wharf', seconds: 11, source: `${MARTIN}, Map 4; ${OHALLORAN}`,
+      title: 'Through town to the wharf', seconds: 18, source: `${MARTIN}, Map 4; ${OHALLORAN}`,
       text: 'A horse team hauls the column down through the town, past the Gorge, to the main wharf on St. George Basin.',
       update(t) {
         placeSkids(false);
-        const c = cartPath.at(ease(t));
+        const go = travel(t, cartPath.length, 18);
+        const c = cartPath.at(go.u);
         put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
         column.rotation.x = 0;
         column.visible = true;
         put(column, c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z, c.heading + Math.PI / 2);
-        return { target: [c.x, c.z], dist: 42, from: c.heading + 2.4, tilt: 0.33 };
+        return { target: [c.x, c.z], dist: 42, from: c.heading + 2.4, tilt: 0.33, fade: go.fade, side: go.side };
       },
     },
     {
@@ -552,6 +607,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
 
   // ---- playing
   const want = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
+  const wantWas = new THREE.Vector3(), V3 = new THREE.Vector3();
   let savedTide = null;
   // After a pause the camera is the viewer's. On resume it flies back, and the story waits for it.
   let settling = 0;
@@ -569,7 +625,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     state.onChange();
   }
   function stop() {
-    state.playing = false; state.step = -1;
+    state.playing = false; state.step = -1; state.fade = 0;
     if (savedTide !== null) { setTide(savedTide); savedTide = null; }
     rest();
     state.onChange();
@@ -579,11 +635,19 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     const s = steps[state.step];
     if (state.playing && settling <= 0) state.t = Math.min(1, state.t + (dt * state.speed) / s.seconds);
     const view = s.update(state.t);
+    state.fade = view.fade ?? 0;
+    const side = view.side ?? 0;
+    if (sideStep !== state.step) { sideStep = state.step; lastSide = side; }
+    else if (side !== lastSide) { snap = true; lastSide = side; } // the cut: the camera jumps with it
     if (state.step !== 0) releaseDerrick();
     const y = groundAt(view.target[0], view.target[1]);
     want.target.set(view.target[0], Math.max(y, world.tide * exag()), view.target[1]);
     const flat = Math.cos(view.tilt) * view.dist;
     want.pos.set(want.target.x + Math.sin(view.from) * flat, want.target.y + Math.sin(view.tilt) * view.dist, want.target.z + Math.cos(view.from) * flat);
+    // the camera rides along with what it follows (a fast scow would leave an easing camera behind)
+    const carry = !snap && state.playing && settling <= 0 && wantWas.lengthSq() > 0 ? V3.subVectors(want.target, wantWas) : null;
+    wantWas.copy(want.target);
+    if (carry && carry.lengthSq() < 400 * 400) { camera.position.add(carry); controls.target.add(carry); }
     if (state.playing || snap) {
       const k = snap ? 1 : 1 - Math.exp(-dt * (settling > 0 ? 3.5 : 2.2));
       camera.position.lerp(want.pos, k);

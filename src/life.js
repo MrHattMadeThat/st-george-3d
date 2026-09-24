@@ -88,10 +88,10 @@ export function buildLife({ scene, data, world, camera }) {
   const V = new THREE.Vector3();
   function rideOn(obj, lx, ly, lz, lh = 0) {
     let px = null, pz = null;
-    return (f) => {
+    return (f, dt = 1 / 60) => {
       obj.updateMatrixWorld();
       V.set(lx, ly, lz).applyMatrix4(obj.matrixWorld);
-      f.moving = px !== null && Math.hypot(V.x - px, V.z - pz) > 0.004;
+      f.moving = px !== null && Math.hypot(V.x - px, V.z - pz) > 0.12 * Math.max(dt, 1e-3); // faster than 0.12 m/s, at any frame rate
       px = V.x; pz = V.z;
       f.x = V.x; f.z = V.z; f.rideY = V.y;
       f.heading = obj.rotation.y + lh;

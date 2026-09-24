@@ -133,11 +133,11 @@ button.wide:hover { background: var(--gold); }
   position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 6;
   width: min(780px, calc(100vw - 32px));
   display: grid; grid-template-columns: 1fr auto; column-gap: 16px; align-items: center;
-  padding: 0 16px 12px 20px; overflow: hidden;
+  padding: 0 16px 12px 20px;
   background: rgba(250, 245, 233, 0.97); border: 2px solid var(--ink); border-radius: 14px; box-shadow: var(--shadow);
 }
 body:not(.clean):not(.collapsed) #caption { left: calc(50% + (var(--panel-w) + 16px) / 2); width: min(740px, calc(100vw - var(--panel-w) - 64px)); }
-.cap-progress { grid-column: 1 / -1; display: flex; gap: 3px; margin: 0 -16px 10px -20px; height: 7px; background: var(--ink); padding: 0 0 1px; }
+.cap-progress { grid-column: 1 / -1; display: flex; gap: 3px; margin: 0 -16px 10px -20px; height: 7px; background: var(--ink); padding: 0 0 1px; border-radius: 12px 12px 0 0; overflow: hidden; }
 .cap-progress button { position: relative; flex-basis: 0; padding: 0; border: 0; background: var(--paper-2); cursor: pointer; }
 .cap-progress button:hover { background: var(--gold-soft); }
 .cap-progress i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--granite); }
@@ -155,7 +155,21 @@ body:not(.clean):not(.collapsed) #caption { left: calc(50% + (var(--panel-w) + 1
 .cap-ctl button.primary { width: 46px; height: 46px; background: var(--granite); color: #fff; font-size: 16px; }
 .cap-ctl button:hover:not(:disabled) { background: var(--gold); color: var(--ink); }
 .cap-ctl button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
-.cap-paused { grid-column: 1 / -1; margin: 10px -16px -12px -20px; padding: 6px 20px; font-size: 12px; font-weight: 600; color: var(--ink); background: var(--gold-soft); border-top: 1.5px solid var(--gold); }
+.cap-paused { grid-column: 1 / -1; margin: 10px -16px -12px -20px; padding: 6px 20px; font-size: 12px; font-weight: 600; color: var(--ink); background: var(--gold-soft); border-top: 1.5px solid var(--gold); border-radius: 0 0 12px 12px; }
+
+/* the polers talking: a speech box sitting on top of the caption, its tail pointing down at the scene */
+#talk {
+  position: absolute; left: 24px; bottom: calc(100% + 14px); max-width: min(520px, calc(100% - 48px));
+  padding: 10px 16px 11px; background: #fff; border: 2px solid var(--ink); border-radius: 14px; box-shadow: var(--shadow);
+  animation: pop 0.15s ease-out;
+}
+#talk::after { content: ''; position: absolute; left: 28px; top: 100%; width: 14px; height: 14px; margin-top: -7px; background: #fff; border: solid var(--ink); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+#talk.reply { left: auto; right: 24px; }
+#talk.reply::after { left: auto; right: 28px; }
+#talk p { margin: 0; }
+.talk-who { font: 700 11px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--sea); }
+.talk-says { font: 17px/1.4 var(--serif); margin-top: 2px !important; }
+@media (prefers-reduced-motion: reduce) { #talk { animation: none; } }
 body.clean .cap-ctl, body.clean .cap-paused { display: none !important; }
 
 /* ---------------------------------------------------------------- the place card */
@@ -207,6 +221,8 @@ body.clean .cap-ctl, body.clean .cap-paused { display: none !important; }
 .ctl-group button + button { border-top: 1.5px solid var(--ink-soft); }
 .ctl-group button:hover { background: var(--gold); }
 .ctl-group button:focus-visible { outline-offset: -3px; }
+
+#fade { position: fixed; inset: 0; z-index: 4; background: var(--paper); opacity: 0; pointer-events: none; }
 
 /* ---------------------------------------------------------------- welcome and about */
 #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 600 18px var(--serif); color: var(--ink); background: #cfe3ea; z-index: 10; }

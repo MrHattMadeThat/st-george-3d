@@ -289,6 +289,18 @@ export const ACTIONS = {
     p.tool = { x: 0, y: 1.08, z: 0.34, rx: 1.0 + 0.04 * Math.sin(t * 2.3), root: true };
     p.headPitch = 0.3;
   },
+  // walking the pole: plant it forward, lean into it and walk aft; the boat slides on under you
+  polePush(p, t, f) {
+    ACTIONS.walk(p, t, f);
+    p.lean = 0.45; p.armLp = 1.35; p.armRp = 1.55; p.armLr = -0.15; p.armRr = 0.2; p.headPitch = 0.15;
+    // the pole's foot on the bottom, out ahead of him and over the side (f.poleOut: +1 his left, -1 his right)
+    p.tool = { x: 0.1, y: 1.45, z: 0.3, rx: -0.62, rz: 0.3 * (f.poleOut ?? 0), root: true };
+  },
+  poleCarry(p, t, f) { // back to the bow with the pole trailing
+    ACTIONS.walk(p, t, f);
+    p.armLp = 0.55; p.armRp = 0.75; p.armRr = 0.15;
+    p.tool = { x: 0.22, y: 1.2, z: 0.1, rx: 1.4, ry: -0.3 * (f.poleOut ?? 0), root: true }; // trailing out over the side
+  },
   lead(p, t, f) { // walking at a horse's head
     ACTIONS.walk(p, t, f);
     p.armLp = 0.65; p.armLr = 0.1;
@@ -297,12 +309,20 @@ export const ACTIONS = {
 
 // ------------------------------------------------------------------ the crowd
 
-// Keep o.gait (cycles walked) and o.pace (smoothed speed) from how far o really moved.
-function track(o, dt, cycle) {
-  const d = o.px === undefined ? 0 : Math.hypot(o.x - o.px, o.z - o.pz);
+// actions that already move the legs; any other action gets walking legs while its figure moves
+const GAITS = new Set(['walk', 'run', 'carry', 'shoulder', 'push', 'lead', 'polePush', 'poleCarry']);
+const tmpWalk = blankPose({});
+
+// Keep o.gait (cycles walked) and o.pace (smoothed speed) from how far o really moved. A figure
+// riding something (a scow, a wagon) moves with it without walking, unless its mover says how far
+// it walked on board (o.onDeck, metres this frame).
+function track(o, dt, cycle, maxRate) {
+  const d = o.onDeck !== undefined ? o.onDeck : o.px === undefined ? 0 : Math.hypot(o.x - o.px, o.z - o.pz);
   o.px = o.x; o.pz = o.z;
   const step = d > 4 ? 0 : d; // a jump (a scene reset) is not a step
-  o.gait = (o.gait ?? o.seed * 3) + step / cycle;
+  // legs never cycle faster than maxRate a second: when a scene moves someone faster than anyone
+  // walks, the feet slide a little rather than blur
+  o.gait = (o.gait ?? o.seed * 3) + Math.min(step / cycle, maxRate * dt);
   const v = dt > 0 ? Math.min(step / dt, 8) : o.pace ?? 0;
   o.pace = (o.pace ?? 0) + (v - (o.pace ?? 0)) * Math.min(1, dt * 6);
 }
@@ -383,7 +403,7 @@ export class Crowd {
     let shown = 0;
     for (const f of this.list) {
       if (f.move) f.move(f, dt, t);
-      track(f, dt, WALK_CYCLE * f.scale * CARTOON);
+      track(f, dt, WALK_CYCLE * f.scale * CARTOON, f.action === 'run' ? 3.2 : 1.9);
       const far = f.hidden || Math.hypot(f.x - cam.x, f.z - cam.z) > range || cam.y - (f.lastY ?? 0) > range;
       if (far) {
         if (!f.culled) this.hide(f);
@@ -394,6 +414,11 @@ export class Crowd {
       shown++;
       const pose = blankPose(tmpPose);
       (ACTIONS[f.action] ?? ACTIONS.idle)(pose, t + f.phase, f);
+      if (!GAITS.has(f.action) && f.pace > 0.05 && (f.rideY === undefined || f.onDeck !== undefined) && pose.drop === 0) {
+        const w = blankPose(tmpWalk);
+        ACTIONS.walk(w, t + f.phase, f);
+        pose.legL = w.legL; pose.legR = w.legR; pose.kneeL = w.kneeL; pose.kneeR = w.kneeR; pose.drop = w.drop;
+      }
       const s = f.scale * CARTOON;
       const y = f.y ? f.y(f) : groundY(f.x, f.z);
       f.lastY = y;
@@ -500,7 +525,7 @@ export class Herd {
     const cam = camera.position, P = this.parts;
     for (const h of this.list) {
       if (h.move) h.move(h, dt, t);
-      track(h, dt, HORSE_CYCLE * CARTOON * 0.92);
+      track(h, dt, HORSE_CYCLE * CARTOON * 0.92, 1.5);
       if (h.hidden || Math.hypot(h.x - cam.x, h.z - cam.z) > range) { for (const m of Object.values(P)) m.setMatrixAt(h.i, M.zero); continue; }
       const walking = typeof h.walking === 'function' ? h.walking(h) : h.walking;
       const tt = t + h.seed * 10;
