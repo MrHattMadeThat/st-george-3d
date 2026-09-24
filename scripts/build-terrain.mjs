@@ -307,6 +307,28 @@ const levelOf = new Float32Array(waterPolys.length).fill(NaN);
     for (const c of add) sea[c] = 1;
     n += add.length;
   }
+  // ...but not above the falls. The stamp and the sliver pass reach up past the lip toward the
+  // upper bridge, which dug a tidal pit under the millpond. Give those cells back to the pond.
+  {
+    const ways = osm.filter((e) => e.type === 'way' && e.tags?.waterway === 'river' && e.tags.name === 'Magaguadavic River'
+      && e.geometry[0].lat <= 45.1296 && e.geometry[0].lat > 45.127).map((e) => toLocal(e.geometry));
+    ways.sort((a, b) => a[0][0] - b[0][0]); // the lip: where the westernmost way below the dam starts
+    const [lx, lz] = ways[0][0], [bx, bz] = ways[0][Math.min(2, ways[0].length - 1)];
+    const bl = Math.hypot(bx - lx, bz - lz), ux = (bx - lx) / bl, uz = (bz - lz) / bl; // downstream
+    let pond = 0, best = Infinity;
+    for (let c = 0; c < FN; c++) {
+      if (!waterId[c]) continue;
+      const i = c % FW, j = (c - i) / FW, d = Math.hypot(XMIN + (i + 0.5) * FINE - lx, ZMIN + (j + 0.5) * FINE - lz);
+      if (d < best) { best = d; pond = waterId[c]; }
+    }
+    let back = 0;
+    for (let c = 0; c < FN; c++) {
+      if (!sea[c]) continue;
+      const i = c % FW, j = (c - i) / FW, x = XMIN + (i + 0.5) * FINE - lx, z = ZMIN + (j + 0.5) * FINE - lz;
+      if (Math.hypot(x, z) < 110 && x * ux + z * uz < -3) { sea[c] = 0; waterId[c] = pond; back++; }
+    }
+    log(`above the falls, given back to the millpond: ${back} cells`);
+  }
   log(`tidal river cells moved to sea: ${n}`);
   levelOf.forEach((v, k) => { levelOf[k] = Math.max(v, HIGH_WATER + 0.5); });
 }

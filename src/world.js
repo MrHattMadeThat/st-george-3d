@@ -339,10 +339,25 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
         if (q) dist += Math.hypot(p[0] - G[q - 1][0], p[1] - G[q - 1][1]);
         return { x: p[0], z: p[1], y: p[2] + 0.1, d: dist, r: Math.min(1, 0.45 + smoothstep(0.01, 0.06, drop)) };
       });
-      const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+      const [lx, lz] = [G[0][0], G[0][1]];
+      // straight back up the Gorge's own line (so the ribbon doesn't fold at the lip) to the pond
+      const bl = Math.hypot(G[0][0] - G[2][0], G[0][1] - G[2][1]), ux = (G[0][0] - G[2][0]) / bl, uz = (G[0][1] - G[2][1]) / bl;
+      let len = 0, pw = NaN;
+      for (let s = 5; s <= 90; s += 2.5) { const w = data.inlandWaterAt(lx + ux * s, lz + uz * s); if (!Number.isNaN(w) && w >= G[0][2] - 0.5) { len = s; pw = w; break; } }
+      const lead = [];
+      if (len > 10) { // only if the pond stops short of the lip (the build normally brings it right up)
+        const reach = len + 3; // just into the pond: any more and the two see-through sheets show doubled
+        for (let s = reach; s > 0.5; s -= 3) {
+          const u = s / reach;
+          lead.push({ x: lx + ux * s, z: lz + uz * s, y: THREE.MathUtils.lerp(G[0][2], pw, Math.min(1, s / len)) + 0.1, d: -s, r: 0.45 * (1 - u) });
+        }
+      }
+      const all = lead.concat(pts);
+      const last = all[all.length - 1], prev = all[all.length - 2];
       const t = tail(last.x, last.z, last.x - prev.x, last.z - prev.z, last.d);
-      const n = pts.length;
-      ribbon(pts.concat(t), (q) => (q === 0 ? 38 : q < n ? 24 : Math.max(10, 24 - (q - n) * 0.5)));
+      const k0 = lead.length, n = all.length;
+      // as wide as the river under the bridge, narrowing to the Gorge at the lip and just below it
+      ribbon(all.concat(t), (q) => (q < k0 ? 26 + 14 * (1 - q / k0) : q < n ? 24 + 2 * Math.max(0, 1 - (q - k0) / 3) : Math.max(10, 24 - (q - n) * 0.5)));
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -991,8 +1006,8 @@ const WATER_FS = /* glsl */ `
       // sun glints: soft sheen far off, crisp cartoon sparkles close up
       vec3 L = normalize(vec3(-0.7, 1.1, -0.45));
       float sp = max(dot(R, L), 0.0);
-      float speck = step(0.62, vnoise(vWorld.xz * 0.9 + vec2(t * 0.7, -t * 0.5))); // glints break up into sparkles, never broad sheets
-      col += vec3(1.0, 0.97, 0.88) * (pow(sp, 400.0) * 0.08 + smoothstep(0.994, 0.997, sp) * speck * 0.3 * near);
+      float speck = step(0.74, vnoise(vWorld.xz * 0.9 + vec2(t * 0.7, -t * 0.5))); // glints break up into sparkles, never broad sheets
+      col += vec3(1.0, 0.97, 0.88) * (pow(sp, 400.0) * 0.08 + smoothstep(0.994, 0.997, sp) * speck * 0.22 * near);
 
       // the shore: a thin, broken line of foam right at the waterline, and a paler band just off it
       float fn = vnoise(vWorld.xz * 0.09 + vec2(t * 0.3, -t * 0.22)) * 0.6 + vnoise(vWorld.xz * 0.35 - t * 0.4) * 0.4;
@@ -1014,6 +1029,9 @@ const WATER_FS = /* glsl */ `
         float spray = smoothstep(0.47, 0.57, white) * (0.85 + 0.15 * boil);
         col = mix(col, uDeep * 0.92, vRapid * 0.6); // dark green water between the white
         foam = max(foam, spray * 0.95);
+        // where the water falls over a step the sheet itself is steep: all white, as falls are
+        float steep = 1.0 - abs(normalize(cross(dFdx(vWorld), dFdy(vWorld))).y);
+        foam = max(foam, smoothstep(0.2, 0.45, steep) * (0.8 + 0.2 * boil));
       }
       col = mix(col, uFoam, foam);
       float alpha = mix(0.45, 0.93, smoothstep(0.15, 5.0, d));

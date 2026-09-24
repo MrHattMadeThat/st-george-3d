@@ -311,6 +311,7 @@ function journeyUI() {
   if (step >= 0) { $('view-name').textContent = 'The Stone’s Journey'; $('view-description').textContent = 'Summer 1874 · ' + (chapters[chapter]?.name || ''); }
   const s = journey.steps[step];
   $('caption').hidden = !s || !showCaptions;
+  document.body.classList.toggle('story', !!s && showCaptions); // the story card takes the menu's place
   if (s) {
     $('cap-count').textContent = `Step ${step + 1} of ${journey.steps.length}`;
     $('cap-title').textContent = s.title;
@@ -349,6 +350,7 @@ $('cap-play').addEventListener('click', () => $('j-play').click());
 $('cap-prev').addEventListener('click', () => stepBy(-1));
 $('cap-next').addEventListener('click', () => stepBy(1));
 $('j-speed').addEventListener('change', (e) => { journey.state.speed = +e.target.value; });
+$('cap-back').addEventListener('click', () => journey.stop());
 $('opt-captions').addEventListener('change', (e) => { showCaptions = e.target.checked; journeyUI(); });
 
 addEventListener('keydown', (e) => {

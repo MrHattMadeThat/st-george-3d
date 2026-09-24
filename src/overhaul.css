@@ -137,3 +137,31 @@ dialog::backdrop { background:#16382e80; backdrop-filter:blur(4px); }
 #panel .tram-card { margin:4px 0; }
 #panel .tram-card h2 { margin-top:6px; }
 .explore-intro p:last-child { font-size:18px; }
+
+/* The journey's story card: while the story plays it takes the menu panel's place. */
+.cap-head { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 -4px 0; padding:10px 0 8px; }
+#cap-back { border:0; background:none; padding:6px 8px 6px 4px; margin-left:-4px; border-radius:6px; color:var(--ink); font-size:12px; font-weight:650; cursor:pointer; }
+#cap-back span { font-size:16px; margin-right:4px; }
+#cap-back:hover { background:var(--gold-soft); }
+.cap-kicker { font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--granite); }
+body.story #btn-expand { display:none !important; }
+@media (min-width:701px) {
+  body.story:not(.clean) #panel { display:none; }
+  body.story:not(.clean) #caption { top:104px; left:20px; bottom:auto; width:var(--panel-w); max-height:calc(100vh - 138px); overflow:auto; transform:none;
+    grid-template-columns:1fr; row-gap:0; padding:0 20px 18px; border-radius:10px; }
+  body.story:not(.clean) .cap-head { border-bottom:1px solid #29493620; margin-bottom:0; padding:14px 0 12px; }
+  body.story:not(.clean) .cap-progress { margin:0 -20px 16px; border-radius:0; }
+  body.story:not(.clean) .cap-step { display:block; }
+  body.story:not(.clean) #cap-count { display:block; margin-bottom:6px; }
+  body.story:not(.clean) #cap-title { font:400 26px/1.15 var(--serif); }
+  body.story:not(.clean) .cap-text { font:16px/1.6 var(--serif); margin-top:12px !important; }
+  body.story:not(.clean) .cap-source { margin-top:14px !important; }
+  body.story:not(.clean) .cap-ctl { justify-content:center; margin-top:18px; gap:10px; }
+  body.story:not(.clean) .cap-paused { margin:16px -20px -18px; }
+  /* the polers' talk sits beside the card, its tail pointing back at it */
+  body.story:not(.clean) #talk, body.story:not(.clean) #talk.reply { position:fixed; left:calc(20px + var(--panel-w) + 22px); right:auto; top:190px; bottom:auto; max-width:min(460px, calc(100vw - var(--panel-w) - 120px)); }
+  body.story:not(.clean) #talk::after, body.story:not(.clean) #talk.reply::after { left:-8px; right:auto; top:18px; bottom:auto; margin:0; transform:rotate(135deg); }
+  body.story:not(.clean) #view-title { left:calc(var(--panel-w) + 56px); }
+}
+@media (max-width:700px) { .cap-head { padding:8px 0 4px; } .cap-kicker { display:none; } }
+body.clean .cap-head { display:none; }
