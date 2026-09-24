@@ -384,6 +384,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     put(truck, t0.x, groundAt(t0.x, t0.z), t0.z, t0.heading);
     put(wagon, c0.x, groundAt(c0.x, c0.z), c0.z, c0.heading);
     put(schooner, berth[0], world.tide * exag(), berth[1], W.rot);
+    schooner.userData.setSails(false);
     put(lathe, latheAt[0], groundAt(latheAt[0], latheAt[1]), latheAt[1], c0.heading + Math.PI / 2);
     column.visible = false; column.rotation.x = 0;
     hideRollers(); placeSkids(false);
@@ -570,6 +571,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         const c = cartPath.at(1);
         put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
         put(schooner, berth[0], world.tide * exag(), berth[1], W.rot);
+        schooner.userData.setSails(false); // furled alongside the wharf; set again to sail
         const from = new THREE.Vector3(c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z), to = deckOf();
         const lift = ease(span(t, 0.05, 0.3)), across = ease(span(t, 0.3, 0.68)), lower = ease(span(t, 0.7, 0.92));
         const top = Math.max(from.y, to.y) + 4;
@@ -577,8 +579,9 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         column.rotation.y = lerpAngle(c.heading + Math.PI / 2, W.rot + Math.PI / 2, across);
         running.tackle = (t > 0.05 && t < 0.3) || (t > 0.7 && t < 0.92);
         if (t < 0.97) hang(tackle, schooner.localToWorld(V2.set(0, 22, 5.5)).clone(), column, 0.9 - AXIS); else rope0(tackle);
-        // from the wharf side, looking across at the ship, so the sails don't hide the lift
-        return { target: [lerp(c.x, berth[0], 0.5), lerp(c.z, berth[1], 0.5)], dist: 48, from: Math.atan2(-wside[0], -wside[1]) + 0.35, tilt: 0.42 };
+        // from above the wharf, looking across the deck at the ship, aimed at deck height (aimed at
+        // the water, the camera sat low under the wharf and looked up at its piles)
+        return { target: [lerp(c.x, berth[0], 0.5), lerp(c.z, berth[1], 0.5)], y: (from.y + to.y) / 2, dist: 72, from: Math.atan2(-wside[0], -wside[1]) + 0.85, tilt: 0.8 };
       },
     },
     {
@@ -589,6 +592,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         rope0(tackle); running.tackle = false;
         const s = seaPath.at(redU * 1.25 * ease(t));
         put(schooner, s.x, world.tide * exag(), s.z, s.heading);
+        schooner.userData.setSails(true);
         column.position.copy(deckOf()); column.rotation.y = s.heading + Math.PI / 2;
         return { target: [s.x, s.z], dist: 150, from: s.heading + 2.4, tilt: 0.33 };
       },
@@ -599,6 +603,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       update(t) {
         const s = seaPath.at(redU * 1.25 + (1 - redU * 1.25) * ease(t));
         put(schooner, s.x, world.tide * exag(), s.z, s.heading);
+        schooner.userData.setSails(true);
         column.position.copy(deckOf()); column.rotation.y = s.heading + Math.PI / 2;
         return { target: [s.x, s.z], dist: 200 + 5700 * ease(span(t, 0.2, 1)), from: s.heading + 2.6, tilt: 0.35 + 0.5 * span(t, 0.2, 1) };
       },
@@ -611,6 +616,16 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   let savedTide = null;
   // After a pause the camera is the viewer's. On resume it flies back, and the story waits for it.
   let settling = 0;
+  // While the story plays the viewer can orbit and zoom. Their view is kept as an offset from the
+  // story's own shot (a distance ratio and a turn and tilt), so the story's camera moves still
+  // happen. Around each change of step the camera takes the story's shot for a moment ("guide"),
+  // then hands it back.
+  const user = { ratio: 1, turn: 0, tilt: 0 };
+  const GUIDE_AFTER = 2.6, GUIDE_BEFORE = 1.2; // seconds of the story's shot after and before a change
+  let guide = 0;
+  const lastPos = new THREE.Vector3(), lastTarget = new THREE.Vector3();
+  let placed = false; // the camera is where this code last put it
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
   function go(k) {
     k = Math.max(0, Math.min(steps.length - 1, k));
@@ -618,7 +633,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     // replay earlier steps to their ends so every prop is where that step leaves it
     rest();
     for (let q = 0; q < k; q++) { state.step = q; steps[q].enter?.(); steps[q].update(1); }
-    state.step = k; state.t = 0; settling = 0;
+    state.step = k; state.t = 0; settling = 0; guide = GUIDE_AFTER; placed = false;
     if (k !== 0) releaseDerrick();
     steps[k].enter?.();
     frame(0, true);
@@ -641,15 +656,38 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     else if (side !== lastSide) { snap = true; lastSide = side; } // the cut: the camera jumps with it
     if (state.step !== 0) releaseDerrick();
     const y = groundAt(view.target[0], view.target[1]);
-    want.target.set(view.target[0], Math.max(y, world.tide * exag()), view.target[1]);
-    const flat = Math.cos(view.tilt) * view.dist;
-    want.pos.set(want.target.x + Math.sin(view.from) * flat, want.target.y + Math.sin(view.tilt) * view.dist, want.target.z + Math.cos(view.from) * flat);
+    want.target.set(view.target[0], view.y ?? Math.max(y, world.tide * exag()), view.target[1]); // a step may aim above the ground (a deck)
+    if (snap) { user.ratio = 1; user.turn = 0; user.tilt = 0; guide = GUIDE_AFTER; }
+    // did the viewer move the camera since the last frame (drag, wheel, buttons, damping)?
+    const moved = placed && (camera.position.distanceToSquared(lastPos) > 1e-6 || controls.target.distanceToSquared(lastTarget) > 1e-6);
+    if (moved && state.playing && !snap) {
+      V3.subVectors(camera.position, controls.target);
+      const d = V3.length();
+      user.ratio = THREE.MathUtils.clamp(d / view.dist, 0.08, 12);
+      user.turn = wrap(Math.atan2(V3.x, V3.z) - view.from);
+      user.tilt = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(V3.y / d, -1, 1)), 0.05, 1.42) - view.tilt;
+      guide = 0; // they've taken it: the story stops steering for now
+    }
+    // the story's shot for a moment either side of a change of step
+    const left = ((1 - state.t) * s.seconds) / state.speed;
+    const steering = state.playing && (guide > 0 || (left < GUIDE_BEFORE && state.step < steps.length - 1));
+    if (steering) {
+      const e = 1 - Math.exp(-dt * 2.4);
+      user.ratio = Math.exp(Math.log(user.ratio) * (1 - e)); user.turn *= 1 - e; user.tilt *= 1 - e;
+    }
+    if (guide > 0 && state.playing && settling <= 0) guide -= dt;
+    const dist = view.dist * user.ratio, from = view.from + user.turn;
+    const tilt = THREE.MathUtils.clamp(view.tilt + user.tilt, 0.05, 1.42);
+    const flat = Math.cos(tilt) * dist;
+    want.pos.set(want.target.x + Math.sin(from) * flat, want.target.y + Math.sin(tilt) * dist, want.target.z + Math.cos(from) * flat);
     // the camera rides along with what it follows (a fast scow would leave an easing camera behind)
     const carry = !snap && state.playing && settling <= 0 && wantWas.lengthSq() > 0 ? V3.subVectors(want.target, wantWas) : null;
     wantWas.copy(want.target);
     if (carry && carry.lengthSq() < 400 * 400) { camera.position.add(carry); controls.target.add(carry); }
     if (state.playing || snap) {
-      const k = snap ? 1 : 1 - Math.exp(-dt * (settling > 0 ? 3.5 : 2.2));
+      // settling after a pause flies back briskly; otherwise the camera follows the shot closely
+      // (the viewer's own changes are already in it), easing a little so step changes don't jolt
+      const k = snap ? 1 : 1 - Math.exp(-dt * (settling > 0 ? 3.5 : steering ? 2.2 : 6));
       camera.position.lerp(want.pos, k);
       controls.target.lerp(want.target, k);
       if (settling > 0) {
@@ -657,8 +695,9 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         if (camera.position.distanceTo(want.pos) < Math.max(2, view.dist * 0.04)) settling = 0;
       }
     }
+    lastPos.copy(camera.position); lastTarget.copy(controls.target); placed = true;
     if (state.t >= 1 && state.playing) {
-      if (state.step < steps.length - 1) { state.step++; state.t = 0; steps[state.step].enter?.(); state.onChange(); }
+      if (state.step < steps.length - 1) { state.step++; state.t = 0; guide = GUIDE_AFTER; steps[state.step].enter?.(); state.onChange(); }
       else { state.playing = false; state.onChange(); }
     }
   }
@@ -668,10 +707,10 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     steps, state,
     play() {
       if (state.step < 0 || (state.step === steps.length - 1 && state.t >= 1)) go(0);
-      else settling = 3; // resuming: give the camera up to 3 s to get back to the story
+      else { settling = 3; guide = GUIDE_AFTER; user.ratio = 1; user.turn = 0; user.tilt = 0; } // resuming: back to the story's shot
       state.playing = true; state.onChange();
     },
-    pause() { state.playing = false; state.onChange(); },
+    pause() { state.playing = false; placed = false; state.onChange(); },
     go, stop, frame,
     /** put props back after the hill height changes */
     refresh() { if (state.step < 0) rest(); else { shears1.place(); shears2.place(); } },

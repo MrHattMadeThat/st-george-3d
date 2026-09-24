@@ -137,8 +137,15 @@ controls.addEventListener('start', () => {
   glide = null;
   flight = null;
   document.querySelectorAll('.stops button').forEach((b) => b.classList.remove('active'));
-  if (journey?.state.playing) journey.pause(); // grabbing the camera pauses the story
 });
+// While the story plays, a drag orbits and the wheel zooms about what the story is following;
+// panning away is left to a paused story.
+function storyControls(on) {
+  controls.enablePan = !on;
+  controls.zoomToCursor = !on;
+  controls.mouseButtons.LEFT = on ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+  controls.touches.ONE = on ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN;
+}
 
 // ------------------------------------------------------------------ panel
 
@@ -312,6 +319,7 @@ function journeyUI() {
   const s = journey.steps[step];
   $('caption').hidden = !s || !showCaptions;
   document.body.classList.toggle('story', !!s && showCaptions); // the story card takes the menu's place
+  storyControls(journey.state.playing);
   if (s) {
     $('cap-count').textContent = `Step ${step + 1} of ${journey.steps.length}`;
     $('cap-title').textContent = s.title;
@@ -406,7 +414,6 @@ function watchPerf(dt) {
 const offset = new THREE.Vector3(), sph = new THREE.Spherical();
 // Turn, tilt or zoom around the point the camera looks at, in a short glide.
 function nudge({ turn = 0, tilt = 0, zoom = 1, north = false }) {
-  if (journey.state.playing) journey.pause(); // like grabbing the camera
   flight = null;
   sph.setFromVector3(offset.copy(camera.position).sub(controls.target));
   const from = { theta: sph.theta, phi: sph.phi, radius: sph.radius };

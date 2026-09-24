@@ -452,11 +452,21 @@ export function makeProps(toon) {
     const jib = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 4, 14.5, 0, 4, 5.8, 0, 20, 5.8], 3)); g.computeVertexNormals(); return tint(g, '#f3ecd8'); })();
     const g = merge([tint(hullGeo, '#23302b'), tint(stripe, '#e8dfc8'), box(6, 0.3, 25, 0, 2.1, 1.5, '#9a7a55'),
       cyl(0.25, 0.32, 22, 0, 2, 5.5, '#6b4a2e', 6), cyl(0.25, 0.32, 24, 0, 2, -4.5, '#6b4a2e', 6), cyl(0.12, 0.18, 9, 0, 0, 0, '#6b4a2e', 5).rotateX(1.35).translate(0, 5.4, 15.5),
-      sail(9, 16, 0.1, 4, 5.3), sail(11, 18, 0.1, 4, -4.7), jib, box(2.4, 1.6, 3.6, 0, 2.3, -8.5, '#7a5a3c')]);
-    // the sails need both faces
-    const m = mesh(g, 'schooner');
-    m.material = mat.clone(); m.material.side = THREE.DoubleSide;
-    return m;
+      box(2.4, 1.6, 3.6, 0, 2.3, -8.5, '#7a5a3c')]);
+    // Sails set, or furled along their booms (as at a wharf, loading). userData.setSails(on) swaps them.
+    const set = merge([sail(9, 16, 0.1, 4, 5.3), sail(11, 18, 0.1, 4, -4.7), jib]);
+    const furled = merge([cyl(0.38, 0.38, 9, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 4.35, 5.3 - 4.5),
+      cyl(0.42, 0.42, 11, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 4.35, -4.7 - 5.5),
+      cyl(0.3, 0.3, 8.5, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 3.6, 10.2)]);
+    const hullMesh = mesh(g, 'schooner hull');
+    const sailMat = mat.clone(); sailMat.side = THREE.DoubleSide; // the sails need both faces
+    const sails = new THREE.Mesh(set, sailMat); sails.name = 'sails';
+    const stowed = new THREE.Mesh(furled, mat); stowed.name = 'furled sails'; stowed.visible = false;
+    const ship = new THREE.Group();
+    ship.name = 'schooner';
+    ship.add(hullMesh, sails, stowed);
+    ship.userData.setSails = (on) => { sails.visible = on; stowed.visible = !on; };
+    return ship;
   };
   // a wagon with a pair of horses (local +z is forward)
   const wagon = () => {
