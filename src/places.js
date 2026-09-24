@@ -2,6 +2,7 @@
 //
 // Every note cites where it came from. Places marked `approx` were placed by eye from
 // Gwen Martin's maps (2013) or a written description, not surveyed.
+import { Vector3 } from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 const MARTIN = 'Martin, G. (2013). The Granite Industry of Southwestern New Brunswick. NB Energy & Mines, Popular Geology Paper 2013-1';
@@ -12,7 +13,7 @@ const GREARSON = 'Grearson, A. G. (1965). History of St. George. Charlotte Count
 export const PLACES = [
   { name: 'St. George', kind: 'town', tier: 1, at: [45.1276, -66.8270] },
   { name: 'Lake Utopia', kind: 'water', tier: 1, at: [45.180, -66.792] },
-  { name: 'Passamaquoddy Bay', kind: 'water', tier: 1, at: [45.098, -66.928] },
+  { name: 'Passamaquoddy Bay', blurb: 'The open bay to the west', kind: 'water', tier: 1, at: [45.098, -66.928] },
   { name: 'Letang Harbour', kind: 'water', tier: 1, at: [45.083, -66.806] },
   { name: 'Magaguadavic River', kind: 'water', tier: 1, at: [45.1745, -66.8447] },
 
@@ -86,7 +87,7 @@ export const PLACES = [
     source: GREARSON,
   },
   {
-    name: 'Letete Passage', kind: 'site', tier: 2, anchor: 'letetePassage', approx: true,
+    name: 'Letete Passage', blurb: 'The way out to the Bay of Fundy', kind: 'site', tier: 2, anchor: 'letetePassage', approx: true,
     note: 'The way out of Passamaquoddy Bay to the Bay of Fundy. From here, schooners carried St. George granite to Saint John, Boston and New York.',
     source: MARTIN,
   },
@@ -94,28 +95,28 @@ export const PLACES = [
 
 // Camera stops. `from` is the compass bearing from the target to the camera (180 = from the south).
 export const PRESETS = [
-  { key: '1', name: 'The whole stage', at: [45.118, -66.848], dist: 23000, from: 180, tilt: 52 },
-  { key: '2', name: 'St. George & the Falls', anchor: 'falls', dist: 1500, from: 150, tilt: 38 },
-  { key: '3', name: 'Lake Utopia & the Canal', at: [45.170, -66.812], dist: 6000, from: 215, tilt: 40 },
-  { key: '4', name: 'The quarry ledges', anchor: 'quarryBoF', dist: 1900, from: 185, tilt: 34 },
-  { key: '5', name: 'Down the Magaguadavic', at: [45.146, -66.838], dist: 4200, from: 110, tilt: 42 },
-  { key: '6', name: 'The Red Store & the estuary', anchor: 'redStore', dist: 3000, from: 165, tilt: 38 },
+  { key: '1', name: 'The whole stage', blurb: 'Everything, from Lake Utopia to Letete', at: [45.118, -66.848], dist: 23000, from: 180, tilt: 52 },
+  { key: '2', name: 'St. George & the Falls', blurb: 'The town, the Gorge and the mill', anchor: 'falls', dist: 1500, from: 150, tilt: 38 },
+  { key: '3', name: 'Lake Utopia & the Canal', blurb: 'Where the granite was quarried', at: [45.170, -66.812], dist: 6000, from: 215, tilt: 40 },
+  { key: '4', name: 'The quarry ledges', blurb: 'The red granite face, up close', anchor: 'quarryBoF', dist: 1900, from: 185, tilt: 34 },
+  { key: '5', name: 'Down the Magaguadavic', blurb: 'The river the scows came down', at: [45.146, -66.838], dist: 4200, from: 110, tilt: 42 },
+  { key: '6', name: 'The Red Store & the estuary', blurb: 'The rival company’s saltwater wharf', anchor: 'redStore', dist: 3000, from: 165, tilt: 38 },
   { key: '7', name: 'Passamaquoddy Bay', at: [45.100, -66.900], dist: 7500, from: 120, tilt: 40 },
-  { key: '8', name: 'Letang Harbour & Back Bay', at: [45.068, -66.840], dist: 7000, from: 190, tilt: 42 },
+  { key: '8', name: 'Letang Harbour & Back Bay', blurb: 'Harbours and fishing villages', at: [45.068, -66.840], dist: 7000, from: 190, tilt: 42 },
   { key: '9', name: 'Letete Passage', anchor: 'letetePassage', dist: 4500, from: 20, tilt: 34 },
 ];
 
 // Close-up stops for watching people at work. `target` and `from` can read the map data.
 const bearingOf = (rot, turn = 0) => (((Math.atan2(Math.sin(rot), -Math.cos(rot)) * 180) / Math.PI) + turn + 360) % 360;
 export const WORK_STOPS = [
-  { key: 'q', name: 'The quarrymen', structure: 'quarry', dist: 38, tilt: 24, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
-  { key: 'w', name: 'The stonecutters’ yard', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 36, tilt: 26, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
-  { key: 'e', name: 'Main Street', target: (d) => {
+  { key: 'q', name: 'The quarrymen', blurb: 'Drilling, splitting and the horse derrick', structure: 'quarry', dist: 38, tilt: 24, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
+  { key: 'w', name: 'The stonecutters’ yard', blurb: 'Mallets, chisels and polishing', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 36, tilt: 26, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
+  { key: 'e', name: 'Main Street', blurb: 'Everyday life in town', target: (d) => {
     const c = d.toLocal(45.1288, -66.8255), s = d.meta.streets.find((q) => q.name === 'Main Street');
     const p = s ? s.pts.reduce((b, q) => (Math.hypot(q[0] - c.x, q[1] - c.z) < Math.hypot(b[0] - c.x, b[1] - c.z) ? q : b)) : [c.x, c.z];
     return { x: p[0], z: p[1] };
   }, dist: 70, tilt: 22, from: 200 },
-  { key: 'r', name: 'The wharf and the Basin', target: (d) => { const w = d.meta.structures.wharf; return { x: w.x + Math.sin(w.rot) * 45, z: w.z + Math.cos(w.rot) * 45 }; }, dist: 55, tilt: 24, from: (d) => bearingOf(d.meta.structures.wharf.rot, 95) },
+  { key: 'r', name: 'The wharf and the Basin', blurb: 'Loading schooners with stone', target: (d) => { const w = d.meta.structures.wharf; return { x: w.x + Math.sin(w.rot) * 45, z: w.z + Math.cos(w.rot) * 45 }; }, dist: 55, tilt: 24, from: (d) => bearingOf(d.meta.structures.wharf.rot, 95) },
 ];
 
 export const SOURCES = [MARTIN, OHALLORAN, GREARSON];
@@ -145,6 +146,7 @@ export function buildLabels(data, scene, onPick) {
     return obj;
   });
   const reach = { 1: Infinity, 2: 11000, 3: 5500 };
+  const v = new Vector3();
   return {
     labels,
     place(exag) {
@@ -155,10 +157,25 @@ export function buildLabels(data, scene, onPick) {
         o.position.set(x, base * exag + (place.kind === 'site' ? (place.structure ? 30 : 40) : 25), z);
       }
     },
-    update(camera, show) {
+    update(camera, show, width, height) {
+      const live = [];
       for (const o of labels) {
         const d = camera.position.distanceTo(o.position);
         o.visible = show && d < reach[o.userData.place.tier];
+        if (o.visible) { o.userData.d = d; live.push(o); }
+      }
+      // The nearest, most important names win; one that would overlap them waits its turn.
+      live.sort((a, b) => a.userData.place.tier - b.userData.place.tier || a.userData.d - b.userData.d);
+      const taken = [];
+      for (const o of live) {
+        v.copy(o.position).project(camera);
+        if (v.z > 1 || v.z < -1) continue;
+        const u = o.userData;
+        if (!u.w && o.element.offsetWidth) { u.w = o.element.offsetWidth; u.h = o.element.offsetHeight; }
+        const w = (u.w || o.element.textContent.length * 8 + 24) / 2 + 4, h = (u.h || 20) / 2 + 3;
+        const x = ((v.x + 1) / 2) * width, y = ((1 - v.y) / 2) * height;
+        if (taken.some((r) => Math.abs(r.x - x) < r.w + w && Math.abs(r.y - y) < r.h + h)) { o.visible = false; continue; }
+        taken.push({ x, y, w, h });
       }
     },
   };

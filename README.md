@@ -35,7 +35,10 @@ the internet at run time).
 | `?q=low` / `?q=high` | force the light or full picture (otherwise it lightens itself on slow computers) |
 
 Keys: **1–9** fly to the camera stops, **H** toggles clean view, **Space** plays or pauses the
-journey, **Esc** stops it and hands the camera back.
+journey, **← →** step back and forward through it, **Esc** closes a place card or stops the journey.
+A start screen explains the controls (skip it with `?nowelcome`; `?clean`, `?journey` and `?preset` skip it too).
+Pausing the journey hands the camera to the viewer; pressing play flies it back and the story waits
+until it arrives. The buttons under the compass zoom, turn and tilt, and the compass itself turns to face north.
 
 ## People at work
 

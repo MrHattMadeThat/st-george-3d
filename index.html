@@ -12,80 +12,170 @@
 
   <aside id="panel">
     <header>
-      <p class="eyebrow">Charlotte County, New Brunswick</p>
-      <h1>St. George, 1874–76</h1>
-      <p class="sub">The Granite Town landscape: from Lake Utopia and the quarry ledges, down the Magaguadavic, out to Letete Passage.</p>
+      <div class="head-row">
+        <p class="eyebrow">Charlotte County, New Brunswick</p>
+        <button type="button" id="btn-collapse" class="icon-btn" title="Hide this panel" aria-label="Hide this panel">«</button>
+      </div>
+      <h1>St. George, <span class="nowrap">1874–76</span></h1>
     </header>
 
-    <section id="journey">
-      <h2>The Stone’s Journey</h2>
-      <p class="sub">Follow one block of red granite from the quarry to a schooner bound for Boston, summer 1874.</p>
-      <div class="transport">
-        <button type="button" id="j-play" class="primary">▶ Play</button>
-        <button type="button" id="j-stop" title="Back to the free camera (Esc)">■ Stop</button>
-        <label class="speed">Speed
-          <select id="j-speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+    <div class="tabs" role="tablist" aria-label="Panel sections">
+      <button type="button" role="tab" id="tab-journey" aria-controls="pane-journey" aria-selected="true">The Journey</button>
+      <button type="button" role="tab" id="tab-places" aria-controls="pane-places" aria-selected="false">Places</button>
+      <button type="button" role="tab" id="tab-view" aria-controls="pane-view" aria-selected="false">View</button>
+    </div>
+
+    <div class="panes">
+      <section id="pane-journey" role="tabpanel" aria-labelledby="tab-journey">
+        <p class="sub">Follow one block of red granite from the quarry to a schooner bound for Boston, summer 1874.</p>
+        <div class="transport">
+          <button type="button" id="j-play" class="primary">▶ Play</button>
+          <button type="button" id="j-stop" title="Back to the free camera (Esc)">■ Stop</button>
+          <label class="speed">Speed
+            <select id="j-speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+          </label>
+        </div>
+        <ol id="j-steps" class="steps"></ol>
+        <label class="check"><input type="checkbox" id="opt-captions" checked /> Show the story captions</label>
+      </section>
+
+      <section id="pane-places" role="tabpanel" aria-labelledby="tab-places" hidden>
+        <h2>Watch the work <span class="hint">close up</span></h2>
+        <div id="work-stops" class="stops"></div>
+        <h2>Go to <span class="hint">the wide views</span></h2>
+        <div id="presets" class="stops"></div>
+        <p class="tip">Tip: click a <span class="pin-sample">gold pin</span> on the map to read about that place.</p>
+      </section>
+
+      <section id="pane-view" role="tabpanel" aria-labelledby="tab-view" hidden>
+        <h2>On the map</h2>
+        <label class="check"><input type="checkbox" id="opt-labels" checked /> Place names</label>
+        <label class="check"><input type="checkbox" id="opt-route" /> Granite route (preview)</label>
+        <div id="route-key" class="key" hidden>
+          <span><i style="background:#d0533b"></i>Scow: quarry → canal → falls</span>
+          <span><i style="background:#fff6dc"></i>Schooner: Basin → Letete Passage</span>
+        </div>
+        <label class="check"><input type="checkbox" id="opt-clouds" checked /> Clouds</label>
+        <h2>Tide</h2>
+        <label class="range">Water level <span id="tide-val"></span>
+          <input type="range" id="opt-tide" min="-3.5" max="3.5" step="0.1" value="1.5" />
         </label>
-      </div>
-      <ol id="j-steps" class="steps"></ol>
-      <label class="check"><input type="checkbox" id="opt-captions" checked /> Captions</label>
-    </section>
-
-    <section>
-      <h2>Watch the work</h2>
-      <div id="work-stops" class="presets"></div>
-    </section>
-
-    <section>
-      <h2>Go to</h2>
-      <div id="presets" class="presets"></div>
-    </section>
-
-    <section>
-      <h2>Show</h2>
-      <label class="check"><input type="checkbox" id="opt-labels" checked /> Place names</label>
-      <label class="check"><input type="checkbox" id="opt-route" /> Granite route (preview)</label>
-      <div id="route-key" class="key" hidden>
-        <span><i style="background:#d0533b"></i>Scow: quarry → canal → falls</span>
-        <span><i style="background:#fff6dc"></i>Schooner: Basin → Letete Passage</span>
-      </div>
-      <label class="range">Tide <span id="tide-val"></span>
-        <input type="range" id="opt-tide" min="-3.5" max="3.5" step="0.1" value="1.5" />
-      </label>
-      <label class="check"><input type="checkbox" id="opt-tide-run" /> Let the tide run</label>
-      <label class="check"><input type="checkbox" id="opt-clouds" checked /> Clouds</label>
-      <label class="range">Trees <span id="trees-val"></span>
-        <input type="range" id="opt-trees" min="0" max="1" step="0.05" value="0.7" />
-      </label>
-      <p id="perf-note" class="note" hidden>This computer was running slowly, so the picture is lighter: fewer trees and fewer pixels. Add <code>?q=high</code> to the address to turn it off.</p>
-      <label class="range">Hill height <span id="exag-val"></span>
-        <input type="range" id="opt-exag" min="1" max="4" step="0.25" value="2" />
-      </label>
-    </section>
-
-    <section id="place-card" hidden>
-      <h2 id="place-name"></h2>
-      <p id="place-note"></p>
-      <p id="place-source" class="source"></p>
-      <p id="place-approx" class="source" hidden>* Position is approximate.</p>
-    </section>
+        <label class="check"><input type="checkbox" id="opt-tide-run" /> Let the tide run</label>
+        <h2>Picture</h2>
+        <label class="range">Trees <span id="trees-val"></span>
+          <input type="range" id="opt-trees" min="0" max="1" step="0.05" value="0.7" />
+        </label>
+        <p id="perf-note" class="note" hidden>This computer was running slowly, so the picture is lighter: fewer trees and fewer pixels. Add <code>?q=high</code> to the address to turn it off.</p>
+        <label class="range">Hill height <span id="exag-val"></span>
+          <input type="range" id="opt-exag" min="1" max="4" step="0.25" value="2" />
+        </label>
+        <button id="btn-clean" type="button" class="wide" title="Hide everything but the picture, for recording (H)">Clean view for recording <kbd>H</kbd></button>
+      </section>
+    </div>
 
     <footer>
-      <button id="btn-clean" type="button" title="Hide the panel and names for recording (H)">Clean view (H)</button>
+      <button id="btn-help" type="button">? Controls</button>
       <button id="btn-about" type="button">About &amp; sources</button>
     </footer>
   </aside>
+  <button type="button" id="btn-expand" class="float-btn" hidden title="Show the panel">☰ Menu</button>
 
-  <div id="compass" aria-hidden="true">
-    <svg viewBox="-20 -20 40 40" width="54" height="54"><circle r="18" /><path d="M0-15 L5 2 L0-1 L-5 2Z" class="n" /><path d="M0 15 L5-2 L0 1 L-5-2Z" class="s" /><text y="-7.5" text-anchor="middle">N</text></svg>
+  <div id="mapctl" role="toolbar" aria-label="Camera">
+    <button type="button" id="compass" title="Face north" aria-label="Compass: click to face north">
+      <svg viewBox="-30 -30 60 60" width="64" height="64" aria-hidden="true">
+        <circle r="28" class="ring" />
+        <g id="rose">
+          <path d="M0-15 L4.5 0 L-4.5 0Z" class="n" />
+          <path d="M0 15 L4.5 0 L-4.5 0Z" class="s" />
+          <circle r="2.2" class="hub" />
+          <text data-at="0 -21.5">N</text>
+          <text data-at="21.5 0" class="minor">E</text>
+          <text data-at="0 21.5" class="minor">S</text>
+          <text data-at="-21.5 0" class="minor">W</text>
+        </g>
+      </svg>
+    </button>
+    <div class="ctl-group">
+      <button type="button" id="ctl-in" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" id="ctl-out" title="Zoom out" aria-label="Zoom out">−</button>
+    </div>
+    <div class="ctl-group">
+      <button type="button" id="ctl-left" title="Turn left" aria-label="Turn the view left">⟲</button>
+      <button type="button" id="ctl-right" title="Turn right" aria-label="Turn the view right">⟳</button>
+    </div>
+    <div class="ctl-group">
+      <button type="button" id="ctl-up" title="Look down from above" aria-label="Tilt to look down from above">⤒</button>
+      <button type="button" id="ctl-down" title="Tilt toward the horizon" aria-label="Tilt toward the horizon">⤓</button>
+    </div>
   </div>
+
+  <div id="place-card" hidden role="dialog" aria-labelledby="place-name">
+    <button type="button" id="place-close" class="icon-btn" aria-label="Close">×</button>
+    <p class="card-kind">Historic site</p>
+    <h2 id="place-name"></h2>
+    <p id="place-note"></p>
+    <p id="place-approx" class="approx" hidden>* Position is approximate: placed by eye from old maps or written descriptions.</p>
+    <p id="place-source" class="source"></p>
+  </div>
+
   <div id="caption" hidden aria-live="polite">
-    <p class="cap-step" id="cap-step"></p>
-    <p class="cap-text" id="cap-text"></p>
-    <p class="cap-source" id="cap-source"></p>
+    <div class="cap-progress" id="cap-progress" aria-hidden="true"></div>
+    <div class="cap-body">
+      <p class="cap-step"><span id="cap-count"></span> <span id="cap-title"></span></p>
+      <p class="cap-text" id="cap-text"></p>
+      <p class="cap-source" id="cap-source"></p>
+    </div>
+    <div class="cap-ctl">
+      <button type="button" id="cap-prev" title="Previous step" aria-label="Previous step">‹</button>
+      <button type="button" id="cap-play" class="primary" title="Play or pause (Space)" aria-label="Play or pause">❚❚</button>
+      <button type="button" id="cap-next" title="Next step" aria-label="Next step">›</button>
+    </div>
+    <p class="cap-paused" id="cap-paused" hidden>Paused: look around freely. Press play and the camera flies back.</p>
   </div>
+
   <div id="loading">Laying out the landscape…</div>
   <p id="credit">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: AWS Terrain Tiles</p>
+
+  <dialog id="welcome" aria-labelledby="welcome-title">
+    <p class="eyebrow">Charlotte County, New Brunswick · the Granite Town years</p>
+    <h2 id="welcome-title">St. George, 1874–76</h2>
+    <p class="lede">A 3D model of the land around St. George when red granite was its big new industry. Fly over the hills, lakes and rivers, then zoom right in to watch the quarrymen, stonecutters and sailors at work.</p>
+    <div class="welcome-grid">
+      <div>
+        <h3>What’s here</h3>
+        <ul class="whats-here">
+          <li><b>The Stone’s Journey:</b> a 13-step story that follows one block of granite from the quarry to a schooner.</li>
+          <li><b>About 450 people and 30 horses</b> at work in the quarry, the mill, the town and on the water.</li>
+          <li><b>Gold pins</b> on historic sites. Click one to read about it and where the facts come from.</li>
+          <li><b>The tide</b>, the hills and the trees can all be changed in the <b>View</b> tab.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Moving around</h3>
+        <table class="controls-table">
+          <tr><th>Move the map</th><td>Click and drag</td></tr>
+          <tr><th>Zoom</th><td>Scroll wheel, or pinch on a trackpad</td></tr>
+          <tr><th>Turn and tilt</th><td>Right-click and drag, or <kbd>Shift</kbd> + drag</td></tr>
+          <tr><th>Touch screens</th><td>One finger moves, two fingers zoom and turn</td></tr>
+          <tr><th>Buttons</th><td>The <b>compass</b> faces north; <b>+ −</b> zoom; <b>⟲ ⟳</b> turn; <b>⤒ ⤓</b> tilt</td></tr>
+        </table>
+        <h3>Keys</h3>
+        <table class="controls-table">
+          <tr><th><kbd>Space</kbd></th><td>Play or pause the journey</td></tr>
+          <tr><th><kbd>←</kbd> <kbd>→</kbd></th><td>Previous or next step (while the journey is on)</td></tr>
+          <tr><th><kbd>1</kbd>–<kbd>9</kbd></th><td>Fly to the wide views</td></tr>
+          <tr><th><kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></th><td>Close-ups of people at work</td></tr>
+          <tr><th><kbd>Esc</kbd></th><td>Stop the journey</td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="welcome-note">Pausing the journey hands you the camera: zoom out and look around, then press play and it flies back to the story.</p>
+    <div class="welcome-actions">
+      <button type="button" id="w-journey" class="primary" disabled>▶ Watch The Stone’s Journey</button>
+      <button type="button" id="w-explore" disabled>Explore the map</button>
+      <span id="w-status" class="w-status">Loading the landscape…</span>
+    </div>
+  </dialog>
 
   <dialog id="about">
     <h2>About this stage</h2>

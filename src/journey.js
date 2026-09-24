@@ -552,6 +552,8 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   // ---- playing
   const want = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
   let savedTide = null;
+  // After a pause the camera is the viewer's. On resume it flies back, and the story waits for it.
+  let settling = 0;
 
   function go(k) {
     k = Math.max(0, Math.min(steps.length - 1, k));
@@ -559,7 +561,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     // replay earlier steps to their ends so every prop is where that step leaves it
     rest();
     for (let q = 0; q < k; q++) { state.step = q; steps[q].enter?.(); steps[q].update(1); }
-    state.step = k; state.t = 0;
+    state.step = k; state.t = 0; settling = 0;
     if (k !== 0) releaseDerrick();
     steps[k].enter?.();
     frame(0, true);
@@ -574,16 +576,22 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   function frame(dt, snap = false) {
     if (state.step < 0) return;
     const s = steps[state.step];
-    if (state.playing) state.t = Math.min(1, state.t + (dt * state.speed) / s.seconds);
+    if (state.playing && settling <= 0) state.t = Math.min(1, state.t + (dt * state.speed) / s.seconds);
     const view = s.update(state.t);
     if (state.step !== 0) releaseDerrick();
     const y = groundAt(view.target[0], view.target[1]);
     want.target.set(view.target[0], Math.max(y, world.tide * exag()), view.target[1]);
     const flat = Math.cos(view.tilt) * view.dist;
     want.pos.set(want.target.x + Math.sin(view.from) * flat, want.target.y + Math.sin(view.tilt) * view.dist, want.target.z + Math.cos(view.from) * flat);
-    const k = snap ? 1 : 1 - Math.exp(-dt * 2.2);
-    camera.position.lerp(want.pos, k);
-    controls.target.lerp(want.target, k);
+    if (state.playing || snap) {
+      const k = snap ? 1 : 1 - Math.exp(-dt * (settling > 0 ? 3.5 : 2.2));
+      camera.position.lerp(want.pos, k);
+      controls.target.lerp(want.target, k);
+      if (settling > 0) {
+        settling -= dt;
+        if (camera.position.distanceTo(want.pos) < Math.max(2, view.dist * 0.04)) settling = 0;
+      }
+    }
     if (state.t >= 1 && state.playing) {
       if (state.step < steps.length - 1) { state.step++; state.t = 0; steps[state.step].enter?.(); state.onChange(); }
       else { state.playing = false; state.onChange(); }
@@ -593,7 +601,11 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   rest();
   return {
     steps, state,
-    play() { if (state.step < 0 || (state.step === steps.length - 1 && state.t >= 1)) go(0); state.playing = true; state.onChange(); },
+    play() {
+      if (state.step < 0 || (state.step === steps.length - 1 && state.t >= 1)) go(0);
+      else settling = 3; // resuming: give the camera up to 3 s to get back to the story
+      state.playing = true; state.onChange();
+    },
     pause() { state.playing = false; state.onChange(); },
     go, stop, frame,
     /** put props back after the hill height changes */
