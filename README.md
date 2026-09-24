@@ -58,7 +58,8 @@ About 450 people and 30 horses, all posed in code ([src/people.js](src/people.js
 - **Out of town**: farmers hoeing, horses grazing, people about the villages, a team waiting at the Red Store.
 - **The journey**: the scow's polers pole only while it moves; the wagon has a walking team and a driver.
 
-Each body part is one instanced mesh for the whole crowd, so everyone costs a few dozen draw calls;
+Walking, running and the horses' walk are paced by how far each figure really moves, not by the
+clock, and a foot on the ground stays planted (legs bend at the knee). Each body part is one instanced mesh for the whole crowd, so everyone costs a few dozen draw calls;
 figures farther than 2 km from the camera are skipped. **Q W E R** fly to close-up stops for
 watching the work. From the console, `stage.life.person(role, { x, z, heading, action, tool })`
 adds a figure; roles are `quarryman`, `stonecutter`, `townsman`, `gentleman`, `woman`, `boy`,

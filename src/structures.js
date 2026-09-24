@@ -347,12 +347,12 @@ export function makeProps(toon) {
   const person = (coat = '#2f4a6b', x = 0, z = 0, y = 0) => merge([cyl(0.35, 0.45, 1.3, x, y, z, coat, 6), tint(new THREE.SphereGeometry(0.32, 8, 6).translate(x, y + 1.6, z), '#e7c3a0'),
     cyl(0.4, 0.4, 0.14, x, y + 1.85, z, '#3b2a1c', 8), cyl(0.22, 0.26, 0.3, x, y + 1.95, z, '#3b2a1c', 8)]);
 
-  // granite: a rough block, and the polished column made from it
+  // granite: a rough block, and the polished column made from it (its origin is on its own axis, so it spins true)
   const block = () => mesh(box(3.2, 1.8, 2.2, 0, 0, 0, '#b3503c'), 'granite block');
   const column = () => {
-    const g = merge([tint(new THREE.CylinderGeometry(0.42, 0.42, 4.6, 14).rotateZ(Math.PI / 2).translate(0, 0.45, 0), '#c85a4c'),
-      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(2.2, 0.45, 0), '#b04c40'),
-      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(-2.2, 0.45, 0), '#b04c40')]);
+    const g = merge([tint(new THREE.CylinderGeometry(0.42, 0.42, 4.6, 14).rotateZ(Math.PI / 2), '#c85a4c'),
+      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(2.2, 0, 0), '#b04c40'),
+      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(-2.2, 0, 0), '#b04c40')]);
     return mesh(g, 'polished column');
   };
   // a flat-bottomed scow, poled by two men (local +z is forward)

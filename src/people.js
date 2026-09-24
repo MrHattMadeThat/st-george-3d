@@ -33,11 +33,14 @@ const SKIN_HAND = '#dcae8a', BOOT = '#2b211a', IRON = '#5a5a5e', WOOD = '#8a6a48
 // Body, 1.75 m tall. Figures face +z; their left is +x. Pivots: legs at the hip, arms at the
 // shoulder, head at the top of the neck, torso at the hip.
 const HIP = 0.92;
+const KNEE = 0.44; // hip to knee; knee to sole is the rest of HIP
+const SHIN = HIP - KNEE;
 // a four-sided tapered block (a squared-off cylinder): coats and waistcoats
 const slab = (wTop, wBot, h, depth, y0, color = TINT, keep = false) =>
   paint(new THREE.CylinderGeometry(wTop / Math.SQRT2, wBot / Math.SQRT2, h, 4, 1).rotateY(Math.PI / 4).scale(1, 1, depth / wTop).translate(0, y0 + h / 2, 0), color, keep);
 const BODY = {
-  leg: () => merge([cy(0.09, 0.075, 0.8, 0, -0.8, 0), bx(0.16, 0.13, 0.28, 0, -0.92, 0.05, BOOT, true)]),
+  thigh: () => merge([cy(0.09, 0.08, 0.47, 0, -0.46, 0), sp(0.08, 0, -KNEE, 0, TINT, false, 1, 1, 1, 0)]),
+  shin: () => merge([cy(0.08, 0.075, 0.4, 0, -0.37, 0), bx(0.16, 0.13, 0.28, 0, -(0.92 - KNEE), 0.05, BOOT, true)]),
   torso: () => merge([slab(0.46, 0.38, 0.58, 0.26, 0), slab(0.42, 0.5, 0.24, 0.3, -0.1), sp(0.09, 0.2, 0.52, 0, TINT, false, 1, 1, 1, 0), sp(0.09, -0.2, 0.52, 0, TINT, false, 1, 1, 1, 0),
     bx(0.14, 0.22, 0.02, 0, 0.34, 0.13, '#efe9dc', true), cy(0.065, 0.07, 0.1, 0, 0.57, 0, '#e0b48f', true)]),
   arm: () => merge([cy(0.066, 0.056, 0.54, 0, -0.54, 0), sp(0.058, 0, -0.6, 0.01, SKIN_HAND, true, 1, 1, 1, 0)]),
@@ -88,7 +91,7 @@ const HORSE = {
 // A pose is joint angles in radians (+ is forward/outward) and offsets in metres.
 function blankPose(p) {
   p.lean = 0; p.twist = 0; p.bob = 0; p.drop = 0; p.headYaw = 0; p.headPitch = 0;
-  p.armLp = 0.06; p.armLr = 0.08; p.armRp = 0.06; p.armRr = 0.08; p.legL = 0; p.legR = 0;
+  p.armLp = 0.06; p.armLr = 0.08; p.armRp = 0.06; p.armRr = 0.08; p.legL = 0; p.legR = 0; p.kneeL = 0; p.kneeR = 0;
   p.tool = null; // { rx, ry, rz, x, y, z } extra placement for the tool
   p.strike = 0;  // 1 on the frame a hammer lands
   return p;
@@ -97,6 +100,36 @@ const TAU = Math.PI * 2;
 const smooth = (a, b, v) => { const t = Math.min(Math.max((v - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
 const pulse = (u, a, b) => (u >= a && u < b ? 1 : 0);
 
+// Walking and running are driven by distance, not the clock: Crowd.update keeps f.gait (cycles
+// walked, from how far the figure really moved) and f.pace (its smoothed speed, m/s). A foot on
+// the ground sweeps back at exactly the speed the body moves, so nobody skates.
+export const WALK_CYCLE = 1.25; // metres per full cycle (two steps) for a 1.75 m figure
+export const RUN_CYCLE = 2.3;
+const WALK_STANCE = 0.6; // share of the cycle a foot is on the ground
+const WALK_SWING = 0.42; // hip swing either way, radians: 2 * HIP * sin(0.42) / 0.6 = WALK_CYCLE
+const legReach = (hip, knee) => KNEE * Math.cos(hip) + SHIN * Math.cos(hip - knee);
+function walkLeg(u, amp) {
+  u -= Math.floor(u);
+  const a = WALK_SWING * amp;
+  // the foot on the ground moves back at an even speed: sin(hip) runs linearly, not the hip angle
+  if (u < WALK_STANCE) return { hip: Math.asin(Math.sin(a) * (1 - (2 * u) / WALK_STANCE)), knee: 0, down: true };
+  const v = (u - WALK_STANCE) / (1 - WALK_STANCE);
+  return { hip: -a + a * (1 - Math.cos(Math.PI * v)), knee: 0.8 * amp * Math.sin(Math.PI * v), down: false };
+}
+const RUN_STANCE = 0.35, RUN_SWING = 0.45; // 2 * HIP * sin(0.45) = RUN_STANCE * RUN_CYCLE
+function runLeg(u, amp) {
+  u -= Math.floor(u);
+  const a = RUN_SWING * amp;
+  if (u < RUN_STANCE) return { u, hip: Math.asin(Math.sin(a) * (1 - (2 * u) / RUN_STANCE)), knee: 0.2 * amp, down: true };
+  const v = (u - RUN_STANCE) / (1 - RUN_STANCE);
+  return { u, hip: -a + a * (1 - Math.cos(Math.PI * v)), knee: amp * (0.2 + 1.5 * Math.sin(Math.PI * v)), down: false };
+}
+const RUN_OFF = legReach(-RUN_SWING, 0.2), RUN_ON = legReach(RUN_SWING, 0.2); // body height leaving and landing
+// how far along its cycle a figure is, and how much it is really walking (0 standing .. 1)
+const gaitOf = (f, t, cycle) => f.gait !== undefined
+  ? { u: f.gait * (WALK_CYCLE / cycle), amp: smooth(0.05, 0.45, f.pace) }
+  : { u: (t * (f.speed ?? 1.3)) / cycle, amp: 1 }; // no tracking (a pose preview): walk on the clock
+
 export const ACTIONS = {
   idle(p, t, f) {
     p.bob = Math.sin(t * 1.6) * 0.008;
@@ -104,17 +137,30 @@ export const ACTIONS = {
     p.armLp = 0.05 + Math.sin(t * 1.6) * 0.02; p.armRp = p.armLp;
   },
   walk(p, t, f) {
-    const s = Math.sin(TAU * (f.speed / 1.5) * t), c = Math.cos(TAU * (f.speed / 1.5) * t);
-    p.legL = 0.42 * s; p.legR = -0.42 * s;
-    p.armLp = -0.34 * s; p.armRp = 0.34 * s;
-    p.bob = Math.abs(c) * 0.035; p.lean = 0.05;
+    const { u, amp } = gaitOf(f, t, WALK_CYCLE);
+    const L = walkLeg(u, amp), R = walkLeg(u + 0.5, amp);
+    p.legL = L.hip; p.kneeL = L.knee; p.legR = R.hip; p.kneeR = R.knee;
+    // the body rides on the straighter of the legs that are down; when both are, the back heel lifts
+    const reach = Math.max(L.down ? legReach(L.hip, L.knee) : 0, R.down ? legReach(R.hip, R.knee) : 0);
+    p.drop = HIP - reach;
+    p.armLp = 0.06 - 0.8 * L.hip; p.armRp = 0.06 - 0.8 * R.hip;
+    p.lean = 0.05 * amp;
     p.headYaw = Math.sin(t * 0.3 + f.seed * 7) * 0.25;
   },
   run(p, t, f) {
-    const s = Math.sin(TAU * (f.speed / 2.2) * t), c = Math.cos(TAU * (f.speed / 2.2) * t);
-    p.legL = 0.75 * s; p.legR = -0.75 * s;
-    p.armLp = 0.35 - 0.7 * s; p.armRp = 0.35 + 0.7 * s; p.armLr = p.armRr = 0.15;
-    p.bob = Math.abs(c) * 0.09; p.lean = 0.22;
+    const { u, amp } = gaitOf(f, t, RUN_CYCLE);
+    const L = runLeg(u, amp), R = runLeg(u + 0.5, amp);
+    p.legL = L.hip; p.kneeL = L.knee; p.legR = R.hip; p.kneeR = R.knee;
+    const down = L.down ? L : R.down ? R : null;
+    let height;
+    if (down) height = legReach(down.hip, down.knee);
+    else { // in the air between steps: from push-off to landing, with a little hop
+      const w = ((L.u >= RUN_STANCE && L.u < 0.5 ? L.u : R.u) - RUN_STANCE) / (0.5 - RUN_STANCE);
+      height = RUN_OFF * amp + HIP * (1 - amp) + (RUN_ON - RUN_OFF) * amp * w + 0.07 * amp * Math.sin(Math.PI * w);
+    }
+    p.drop = HIP - height;
+    p.armLp = 0.35 - 1.3 * L.hip; p.armRp = 0.35 - 1.3 * R.hip; p.armLr = p.armRr = 0.15;
+    p.lean = 0.22 * amp;
   },
   carry(p, t, f) { // walking with a load held up in front
     ACTIONS.walk(p, t, f);
@@ -135,14 +181,14 @@ export const ACTIONS = {
     const a = 0.75 + 2.25 * up - 2.25 * down;
     p.armLp = p.armRp = a; p.armLr = -0.24; p.armRr = 0.24;
     p.lean = 0.12 - 0.22 * up + 0.3 * down;
-    p.legL = 0.28; p.legR = -0.18;
+    p.legL = 0.28; p.legR = -0.18; p.kneeL = 0.25; p.kneeR = 0.1;
     p.strike = u >= 0.58 && u < 0.63 ? 1 : 0;
     p.headPitch = 0.35;
     // wrists cock the sledge back at the top and snap it through at the blow
     p.tool = { rx: 0.9 * (up - down) - 0.25 * down * (1 - smooth(0.7, 1, u)) };
   },
   holdDrill(p, t) {
-    p.drop = 0.5; p.legL = p.legR = 1.45; p.lean = 0.32;
+    p.drop = 0.47; p.legL = p.legR = 0.35; p.kneeL = p.kneeR = 2.0; p.lean = 0.32;
     p.armLp = p.armRp = 0.72; p.armLr = -0.22; p.armRr = 0.22;
     p.headPitch = 0.35; p.headYaw = 0.2 * Math.sin(t * 0.5);
     // the drill turns a little after every blow
@@ -159,7 +205,7 @@ export const ACTIONS = {
   pry(p, t, f) {
     const s = Math.sin(TAU * 0.45 * t + f.seed * 6);
     p.lean = 0.55 + 0.12 * s; p.armLp = p.armRp = 1.2 + 0.3 * s; p.armLr = -0.2; p.armRr = 0.2;
-    p.legL = 0.35; p.legR = -0.25; p.drop = 0.06 + 0.04 * s;
+    p.legL = 0.35; p.legR = -0.25; p.kneeL = 0.35; p.kneeR = 0.2; p.drop = 0.06 + 0.04 * s;
     p.tool = { rx: -0.9 + 0.3 * s };
   },
   polish(p, t, f) {
@@ -177,7 +223,7 @@ export const ACTIONS = {
     const u = (t * 0.7 + f.seed) % 1;
     const a = smooth(0, 0.55, u) - smooth(0.55, 0.72, u);
     p.lean = 0.3 + 0.15 * (1 - a); p.armLp = 0.55 + 1.1 * a; p.armRp = 0.5 + 1.1 * a; p.armLr = -0.15; p.armRr = 0.15;
-    p.legL = 0.3; p.legR = -0.2; p.headPitch = 0.3;
+    p.legL = 0.3; p.legR = -0.2; p.kneeL = 0.3; p.kneeR = 0.15; p.headPitch = 0.3;
   },
   chat(p, t, f) {
     ACTIONS.idle(p, t, f);
@@ -207,7 +253,7 @@ export const ACTIONS = {
   push(p, t, f) {
     ACTIONS.walk(p, t, { ...f, speed: f.moving === false ? 0 : 0.6 });
     p.lean = 0.5; p.armLp = p.armRp = 1.45; p.armLr = -0.12; p.armRr = 0.12;
-    p.legL = p.legL * 0.8 + 0.25; p.legR = p.legR * 0.8 - 0.25;
+    p.legL = p.legL * 0.8 + 0.25; p.legR = p.legR * 0.8 - 0.25; p.kneeL += 0.3; p.kneeR += 0.3;
   },
   // steadying a load as it swings on the fall
   guide(p, t, f) {
@@ -220,7 +266,7 @@ export const ACTIONS = {
     p.bob = Math.sin(t * 1.6) * 0.01;
   },
   sit(p, t, f) {
-    p.drop = 0.47; p.legL = p.legR = 1.5; p.lean = -0.05;
+    p.drop = 0.47; p.legL = p.legR = 1.5; p.kneeL = p.kneeR = 1.45; p.lean = -0.05;
     p.armLp = p.armRp = 0.45; p.headYaw = Math.sin(t * 0.3 + f.seed * 5) * 0.4;
   },
   drive(p, t, f) {
@@ -230,7 +276,7 @@ export const ACTIONS = {
   },
   row(p, t, f) {
     const s = Math.sin(TAU * 0.5 * t + f.seed);
-    p.drop = 0.47; p.legL = p.legR = 1.2; p.lean = -0.1 - 0.35 * s;
+    p.drop = 0.47; p.legL = p.legR = 1.3; p.kneeL = p.kneeR = 1.0; p.lean = -0.1 - 0.35 * s;
     p.armLp = p.armRp = 1.1 + 0.4 * s; p.armLr = 0.5; p.armRr = 0.5;
   },
   haul(p, t, f) { // hauling on a line, hand over hand
@@ -251,10 +297,20 @@ export const ACTIONS = {
 
 // ------------------------------------------------------------------ the crowd
 
+// Keep o.gait (cycles walked) and o.pace (smoothed speed) from how far o really moved.
+function track(o, dt, cycle) {
+  const d = o.px === undefined ? 0 : Math.hypot(o.x - o.px, o.z - o.pz);
+  o.px = o.x; o.pz = o.z;
+  const step = d > 4 ? 0 : d; // a jump (a scene reset) is not a step
+  o.gait = (o.gait ?? o.seed * 3) + step / cycle;
+  const v = dt > 0 ? Math.min(step / dt, 8) : o.pace ?? 0;
+  o.pace = (o.pace ?? 0) + (v - (o.pace ?? 0)) * Math.min(1, dt * 6);
+}
+
 const tmpPose = blankPose({});
 const M = {
   root: new THREE.Matrix4(), torso: new THREE.Matrix4(), head: new THREE.Matrix4(), arm: new THREE.Matrix4(), part: new THREE.Matrix4(),
-  local: new THREE.Matrix4(), armL: new THREE.Matrix4(), zero: new THREE.Matrix4().makeScale(0, 0, 0),
+  local: new THREE.Matrix4(), armL: new THREE.Matrix4(), leg: new THREE.Matrix4(), zero: new THREE.Matrix4().makeScale(0, 0, 0),
 };
 const Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), C = new THREE.Color();
 const local = (x, y, z, rx = 0, ry = 0, rz = 0, order = 'ZYX') => M.local.makeRotationFromEuler(E.set(rx, ry, rz, order)).setPosition(x, y, z);
@@ -287,7 +343,8 @@ export class Crowd {
       return m;
     };
     this.parts = {
-      legL: make('legL', BODY.leg()), legR: make('legR', BODY.leg()), torso: make('torso', BODY.torso()),
+      thighL: make('thighL', BODY.thigh()), thighR: make('thighR', BODY.thigh()), shinL: make('shinL', BODY.shin()), shinR: make('shinR', BODY.shin()),
+      torso: make('torso', BODY.torso()),
       armL: make('armL', BODY.arm()), armR: make('armR', BODY.arm()), head: make('head', BODY.head()),
       beard: make('beard', BODY.beard()), skirt: make('skirt', BODY.skirt()),
     };
@@ -312,7 +369,7 @@ export class Crowd {
     this.list.push(f);
     const set = (m, c) => m.setColorAt(f.i, C.set(c ?? '#ffffff'));
     const col = f.colors;
-    set(this.parts.legL, col.legs); set(this.parts.legR, col.legs);
+    for (const k of ['thighL', 'thighR', 'shinL', 'shinR']) set(this.parts[k], col.legs);
     set(this.parts.torso, col.coat); set(this.parts.armL, col.coat); set(this.parts.armR, col.coat);
     set(this.parts.head, col.skin); set(this.parts.beard, col.hair); set(this.parts.skirt, col.dress ?? col.coat);
     if (f.hat) set(this.hats[f.hat], col.hat);
@@ -326,6 +383,7 @@ export class Crowd {
     let shown = 0;
     for (const f of this.list) {
       if (f.move) f.move(f, dt, t);
+      track(f, dt, WALK_CYCLE * f.scale * CARTOON);
       const far = f.hidden || Math.hypot(f.x - cam.x, f.z - cam.z) > range || cam.y - (f.lastY ?? 0) > range;
       if (far) {
         if (!f.culled) this.hide(f);
@@ -342,10 +400,13 @@ export class Crowd {
       M.root.compose(V.set(f.x, y + (pose.bob - pose.drop) * s, f.z), Q.setFromAxisAngle(Y, f.heading + (f.yaw ?? 0)), S.set(s, s, s));
       const woman = f.kind === 'woman' || f.kind === 'girl';
       // legs (hidden under a skirt)
-      if (woman) { P.legL.setMatrixAt(f.i, M.zero); P.legR.setMatrixAt(f.i, M.zero); }
+      if (woman) { for (const m of [P.thighL, P.thighR, P.shinL, P.shinR]) m.setMatrixAt(f.i, M.zero); }
       else {
-        P.legL.setMatrixAt(f.i, M.part.multiplyMatrices(M.root, local(0.11, HIP, 0, -pose.legL)));
-        P.legR.setMatrixAt(f.i, M.part.multiplyMatrices(M.root, local(-0.11, HIP, 0, -pose.legR)));
+        for (const [thigh, shin, x, hip, knee] of [[P.thighL, P.shinL, 0.11, pose.legL, pose.kneeL], [P.thighR, P.shinR, -0.11, pose.legR, pose.kneeR]]) {
+          M.leg.multiplyMatrices(M.root, local(x, HIP, 0, -hip));
+          thigh.setMatrixAt(f.i, M.leg);
+          shin.setMatrixAt(f.i, M.part.multiplyMatrices(M.leg, local(0, -KNEE, 0, knee)));
+        }
       }
       P.skirt.setMatrixAt(f.i, woman ? M.part.multiplyMatrices(M.root, local(0, HIP, 0, -Math.max(pose.legL, pose.legR) * 0.25)) : M.zero);
       M.torso.multiplyMatrices(M.root, local(0, HIP, 0, pose.lean, pose.twist, 0, 'YXZ'));
@@ -396,6 +457,19 @@ export const CARTOON = 1.22;
 
 // ------------------------------------------------------------------ horses
 
+// The walk: hind left, fore left, hind right, fore right, a quarter cycle apart, each hoof on the
+// ground for 65% of the cycle, sweeping back at the horse's own speed.
+const HORSE_LEG = 0.97, HORSE_STANCE = 0.65, HORSE_SWING = 0.36;
+const HORSE_CYCLE = (2 * HORSE_LEG * Math.sin(HORSE_SWING)) / HORSE_STANCE; // metres a cycle: ~1.05 unscaled
+const HORSE_LEGS = [[0.19, -0.72, 0], [0.19, 0.72, 0.25], [-0.19, -0.72, 0.5], [-0.19, 0.72, 0.75]]; // x, z, phase: HL FL HR FR
+function horseLeg(u, amp) {
+  u -= Math.floor(u);
+  const a = HORSE_SWING * amp;
+  if (u < HORSE_STANCE) return { hip: a * (1 - (2 * u) / HORSE_STANCE), lift: 0, down: true };
+  const v = (u - HORSE_STANCE) / (1 - HORSE_STANCE);
+  return { hip: -a + a * (1 - Math.cos(Math.PI * v)), lift: 0.16 * amp * Math.sin(Math.PI * v), down: false };
+}
+
 export class Herd {
   constructor(max, toon, material) {
     this.max = max;
@@ -426,23 +500,28 @@ export class Herd {
     const cam = camera.position, P = this.parts;
     for (const h of this.list) {
       if (h.move) h.move(h, dt, t);
+      track(h, dt, HORSE_CYCLE * CARTOON * 0.92);
       if (h.hidden || Math.hypot(h.x - cam.x, h.z - cam.z) > range) { for (const m of Object.values(P)) m.setMatrixAt(h.i, M.zero); continue; }
       const walking = typeof h.walking === 'function' ? h.walking(h) : h.walking;
       const tt = t + h.seed * 10;
-      const w = TAU * (h.speed / 2.2) * tt, s = walking ? Math.sin(w) : 0, c = walking ? Math.cos(w) : 0;
-      const y = h.y ? h.y(h) : groundY(h.x, h.z);
       const sc = CARTOON * 0.92;
-      M.root.compose(V.set(h.x, y + Math.abs(c) * 0.04 * sc, h.z), Q.setFromAxisAngle(Y, h.heading), S.set(sc, sc, sc));
+      // a four-beat walk, paced by how far the horse really moved (see track)
+      h.amp = (h.amp ?? 0) + ((walking ? smooth(0.05, 0.4, h.pace) : 0) - (h.amp ?? 0)) * Math.min(1, dt * 5);
+      const legs = HORSE_LEGS.map(([x, z, off]) => ({ x, z, ...horseLeg(h.gait + off, h.amp) }));
+      const reach = Math.max(...legs.filter((l) => l.down).map((l) => Math.cos(l.hip)));
+      const s = Math.sin(TAU * h.gait * 2) * h.amp; // nods twice a cycle
+      const y = h.y ? h.y(h) : groundY(h.x, h.z);
+      M.root.compose(V.set(h.x, y - HORSE_LEG * (1 - reach) * sc, h.z), Q.setFromAxisAngle(Y, h.heading), S.set(sc, sc, sc));
       P.body.setMatrixAt(h.i, M.root);
       P.harness.setMatrixAt(h.i, h.harness ? M.root : M.zero);
       const graze = walking ? 0 : smooth(0.3, 0.9, Math.sin(tt * 0.25)) * 0.9;
       P.head.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(0, 1.45, 0.9, 0.12 * s * 0.4 + graze + 0.03 * Math.sin(tt * 1.3), 0, 0)));
       P.tail.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(0, 1.5, -0.95, -0.35, 0, 0.15 * Math.sin(tt * 1.7))));
-      const a = 0.38;
-      P.legFL.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(0.19, 0.97, 0.72, -a * s)));
-      P.legHR.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(-0.19, 0.97, -0.72, -a * s)));
-      P.legFR.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(-0.19, 0.97, 0.72, a * s)));
-      P.legHL.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(0.19, 0.97, -0.72, a * s)));
+      [P.legHL, P.legFL, P.legHR, P.legFR].forEach((part, k) => {
+        const l = legs[k];
+        // a leg in the air folds up (shortens) so the hoof clears the ground
+        part.setMatrixAt(h.i, M.part.multiplyMatrices(M.root, local(l.x, 0.97, l.z, -l.hip)).multiply(M.local.makeScale(1, 1 - l.lift, 1)));
+      });
     }
     for (const m of this.group.children) m.instanceMatrix.needsUpdate = true;
   }

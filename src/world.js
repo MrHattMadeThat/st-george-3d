@@ -59,7 +59,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeVertexNormals();
     const paintExt = new THREE.Vector4(xmin, zmin, 1 / pw, 1 / ph);
-    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, paintExt, { hole: townRect }));
+    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, paintExt, { hole: townRect, detail: quality !== 'low' }));
     terrain.name = 'terrain';
     ground.add(terrain);
 
@@ -86,7 +86,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     data.townPaint.flipY = false;
     data.townPaint.colorSpace = THREE.SRGBColorSpace;
     data.townPaint.anisotropy = 8;
-    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, { townMasks: data.townMasks }));
+    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, { townMasks: data.townMasks, detail: quality !== 'low' }));
     townGround.name = 'town-ground';
     ground.add(townGround);
   }
@@ -550,12 +550,96 @@ function buildClouds(meta, toon) {
 // reeds are drawn per pixel from masks.png so they stay crisp at any distance. The lot grid,
 // hash and centre test match fieldAt() and the tree rule in the build.
 const FIELD_COLORS = ['#d6c468', '#c4d06c', '#8cbe56', '#96724c', '#b6b868', '#e2d68c'];
-function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null } = {}) {
+
+// Close-up ground: the paint is one pixel per 15 m (2.5 m in town), so on its own it is a blur
+// underfoot. This adds what the surface is made of, read from the paint colour and masks:
+// grass clumps, blades and a few flowers; grain and pebbles on dirt, mud and streets; ripples in
+// sand; rows of crops or plough ridges in the lots; grain and lichen on rock. Every layer fades by
+// lod() as it gets too small to see, which is the level of detail as the camera comes down.
+const GROUND_DETAIL = `
+  vec3 groundDetail(vec3 col, vec2 p, int crop, float inLot, vec2 lotF, vec3 mk) {
+    float lum = dot(col, vec3(0.3, 0.55, 0.15));
+    float green = smoothstep(0.02, 0.1, col.g - max(col.r, col.b));
+    float sand = smoothstep(0.66, 0.76, lum) * smoothstep(0.05, 0.1, col.r - col.b) * (1.0 - green);
+    float rock = smoothstep(0.25, 0.6, mk.g);
+    float soil = (1.0 - green) * (1.0 - sand) * (1.0 - rock);
+
+    // broad light and dark patches, a few metres to tens of metres across
+    float m = vn(p / 23.0) * 0.55 + vn(p / 6.5) * 0.45;
+    col *= 1.0 + (m - 0.5) * 0.16 * lod(6.5);
+
+    if (crop >= 0 && inLot > 0.5) {
+      float w = lod(0.8);
+      float along = lotF.x, across = lotF.y;
+      if (crop == 3) { // ploughed: ridges and furrows, lit on one side
+        float r = fract(across / 0.7);
+        col *= mix(1.0, 0.8 + 0.3 * smoothstep(0.0, 0.5, r) * (1.0 - smoothstep(0.5, 1.0, r)), w);
+        col = pebbles(col, p, 0.45, 0.25 * lod(0.45));
+      } else if (crop == 0 || crop == 5) { // grain and hay: stalks combed one way by the wind
+        float s1 = vn(vec2(along / 0.03, across / 0.25)), s2 = vn(vec2(along / 0.012, across / 0.1) + 17.0);
+        col *= mix(1.0, 0.84 + 0.3 * s1, lod(0.12));
+        col *= mix(1.0, 0.9 + 0.18 * s2, lod(0.05));
+        col *= mix(1.0, 0.94 + 0.08 * vn(vec2(along / 3.0, across / 0.9)), w); // wind waves
+      } else { // row crops: round leafy plants in rows, bare earth between
+        vec2 q = vec2(along / 0.4, across / 0.75);
+        vec2 cell = floor(q), o = hc2(cell) - 0.5;
+        vec2 d = (fract(q) - 0.5 - vec2(o.x * 0.35, o.y * 0.1)) * vec2(0.4, 0.75);
+        float r = 0.15 + 0.07 * hc(cell + 13.0);
+        float leaf = 1.0 - smoothstep(r - 0.03, r, length(d));
+        float shade = 0.82 + 0.3 * smoothstep(r, 0.0, length(d - vec2(0.0, 0.05))); // lit crown, darker rim
+        vec3 earth = vec3(0.5, 0.39, 0.26) * (0.9 + 0.2 * vn(p / 0.08));
+        vec3 plantCol = col * 1.05 * shade * (0.9 + 0.2 * vn(p / 0.05));
+        col = mix(col, mix(earth, plantCol, leaf), w * 0.9);
+      }
+      return col;
+    }
+    if (green > 0.0) { // grass, forest floor, marsh
+      float clump = vn(p / 1.3) * 0.6 + vn(p / 0.4 + 5.0) * 0.4;
+      vec3 g = col * (0.8 + 0.34 * clump);
+      g = mix(g, g * vec3(1.08, 1.04, 0.85), smoothstep(0.6, 0.9, clump) * 0.5); // sunlit, drier tips
+      // blades: narrow speckle, a little darker at the roots
+      // blades: streaks that lean one way in each patch, a new way in the next
+      float a = vn(p / 2.5) * 6.28;
+      vec2 bp = mat2(cos(a), sin(a), -sin(a), cos(a)) * p;
+      float blade = vn(bp / vec2(0.022, 0.16)), fine = vn(bp / vec2(0.01, 0.07) + 31.0);
+      g *= mix(1.0, 0.68 + 0.55 * smoothstep(0.2, 0.8, blade), lod(0.1));
+      g *= mix(1.0, 0.8 + 0.32 * fine, lod(0.04));
+      // the odd wildflower in open meadow (not under the trees)
+      vec2 fc = floor(p / 0.55);
+      float bloom = step(0.975, hc(fc + 101.0)) * (1.0 - smoothstep(0.05, 0.08, length(fract(p / 0.55) - 0.5) * 0.55));
+      vec3 petal = hc(fc + 7.0) > 0.5 ? vec3(0.98, 0.94, 0.72) : vec3(0.95, 0.82, 0.3);
+      g = mix(g, petal, bloom * lod(0.1) * smoothstep(0.45, 0.6, lum));
+      col = mix(col, g, green);
+    }
+    if (soil > 0.0) { // dirt, mud, streets, yards: grain and pebbles
+      vec3 d = col * (0.9 + 0.2 * vn(p / 2.2));
+      d *= mix(1.0, 0.88 + 0.24 * vn(p / 0.035), lod(0.08));
+      d = pebbles(d, p, 0.3, 0.55 * lod(0.3));
+      col = mix(col, d, soil);
+    }
+    if (sand > 0.0) { // wind and water ripples
+      float wav = sin(p.x * 5.0 + p.y * 2.0 + vn(p / 1.5) * 6.0);
+      vec3 sd = col * (1.0 + 0.06 * wav * lod(1.2));
+      sd *= mix(1.0, 0.93 + 0.14 * vn(p / 0.025), lod(0.06));
+      col = mix(col, sd, sand);
+    }
+    if (rock > 0.0) { // feldspar and quartz grain, lichen
+      float grain = vn(p / 0.035);
+      vec3 r = col * mix(1.0, 0.85 + 0.25 * vn(p / 0.12), lod(0.2));
+      r = mix(r, grain > 0.72 ? vec3(0.93, 0.9, 0.86) : r * (grain < 0.2 ? 0.6 : 1.0), lod(0.08) * step(0.72, grain) + lod(0.08) * step(grain, 0.2) * 0.8); // quartz and dark mica
+      float lichen = smoothstep(0.74, 0.8, vn(p / 0.5)) * lod(0.5);
+      r *= mix(vec3(1.0), vec3(0.86, 0.94, 0.8), lichen * 0.6); // faint grey-green lichen
+      col = mix(col, r, rock);
+    }
+    return col;
+  }
+`;
+function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null, detail = true } = {}) {
   masks.flipY = false;
   masks.colorSpace = THREE.NoColorSpace;
   if (townMasks) { townMasks.flipY = false; townMasks.colorSpace = THREE.NoColorSpace; }
   const m = new THREE.MeshLambertMaterial({ map: paint });
-  m.defines = { ...(hole ? { HOLE: 1 } : {}), ...(townMasks ? { TOWN: 1 } : {}) };
+  m.defines = { ...(hole ? { HOLE: 1 } : {}), ...(townMasks ? { TOWN: 1 } : {}), ...(detail ? { DETAIL: 1 } : {}) };
   const fields = FIELD_COLORS.map((c) => new THREE.Color(c));
   const hedge = new THREE.Color('#5c7840');
   m.onBeforeCompile = (shader) => {
@@ -583,11 +667,38 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null 
           }
           return d2 - d1;
         }
+        // integer hash of a cell, 0..1; fine for cells a few centimetres across anywhere on the board
+        float hc(vec2 c) {
+          uvec2 q = uvec2(ivec2(floor(c)) + 1048576);
+          uint h = (q.x * 1597334673u) ^ (q.y * 3812015801u);
+          h = (h ^ (h >> 16u)) * 2246822519u; h ^= h >> 13u;
+          return float(h) / 4294967295.0;
+        }
+        vec2 hc2(vec2 c) { return vec2(hc(c), hc(c + 7919.0)); }
+        float vn(vec2 p) {
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hc(i), hc(i + vec2(1, 0)), f.x), mix(hc(i + vec2(0, 1)), hc(i + 1.0), f.x), f.y);
+        }
+        // Detail with a feature size of s metres shows only once a pixel covers well under s,
+        // so each layer fades in as the camera comes down and nothing shimmers far away.
+        float gFw;
+        float lod(float s) { return 1.0 - smoothstep(0.12 * s, 0.4 * s, gFw); }
+        // pebbles: one per cell of size c, lighter stone with a shadow on its far side
+        vec3 pebbles(vec3 col, vec2 p, float c, float amount) {
+          vec2 cell = floor(p / c), o = hc2(cell);
+          vec2 d = (fract(p / c) - 0.2 - 0.6 * o) * c;
+          float r = c * (0.1 + 0.12 * hc(cell + 31.0));
+          float inStone = (1.0 - smoothstep(r * 0.8, r, length(d))) * step(1.0 - amount, hc(cell + 57.0));
+          float shade = 1.0 - 0.35 * (1.0 - smoothstep(r, r * 1.5, length(d - vec2(0.0, r * 0.5)))) * (1.0 - inStone);
+          vec3 stone = mix(vec3(0.62, 0.6, 0.56), vec3(0.78, 0.72, 0.64), hc(cell + 3.0));
+          return mix(col * shade, stone, inStone);
+        }
         float lotHash(ivec2 c, uint s) {
           uint h = uint(c.x + 1000) * 374761393u + uint(c.y + 1000) * 668265263u + s * 1442695041u;
           h = (h ^ (h >> 13u)) * 1274126177u;
           return float(h ^ (h >> 16u)) / 4294967296.0;
-        }`)
+        }
+        ${GROUND_DETAIL}`)
       .replace('#include <map_fragment>', `
         #ifdef HOLE
           if (vWPos.x > uHole.x + 0.2 && vWPos.x < uHole.z - 0.2 && vWPos.z > uHole.y + 0.2 && vWPos.z < uHole.w - 0.2) discard;
@@ -609,13 +720,17 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null 
         vec2 cl = (vec2(cellId) + 0.5) * vec2(150.0, 90.0);
         vec2 cw = vec2(cl.x * cos(ANG) + cl.y * sin(ANG), -cl.x * sin(ANG) + cl.y * cos(ANG));
         float farmMid = texture2D(uMasks, (cw - uPaintExt.xy) * uPaintExt.zw).r;
+        gFw = max(fwidth(vWPos.x), fwidth(vWPos.z)) + 1e-4;
+        int crop = -1; float inLot = 0.0;
         if (farmMid > max(0.35, open) && farmland > 0.12) {
           int kind = int(lotHash(cellId, 11u) * 6.0);
+          crop = kind;
           vec3 fc = uFields[kind];
           // furrows: faint stripes along each lot
           fc *= 0.94 + 0.06 * sin(f.y * 1.3);
           float aa = fwidth(edgeDist) + 0.001;
-          paintCol = mix(uHedge, fc, smoothstep(4.0 - aa, 4.0 + aa, edgeDist));
+          inLot = smoothstep(4.0 - aa, 4.0 + aa, edgeDist);
+          paintCol = mix(uHedge, fc, inLot);
         }
         if (mk.g > 0.25) { // ledges: joints and a speckle of feldspar and quartz
           float c = cracks(vWPos.xz / 11.0);
@@ -633,6 +748,9 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null 
           float pool = smoothstep(0.78, 0.8, h22(floor(vWPos.xz / 23.0)).x) * (1.0 - smoothstep(0.25, 0.45, length(fract(vWPos.xz / 23.0) - 0.5)));
           paintCol = mix(paintCol, vec3(0.16, 0.3, 0.33), pool * 0.8);
         }
+        #ifdef DETAIL
+          paintCol = groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk);
+        #endif
         diffuseColor.rgb *= paintCol;`);
   };
   return m;

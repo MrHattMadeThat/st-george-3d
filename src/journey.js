@@ -51,6 +51,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   group.add(block, column, scow, wagon, truck, schooner);
   truck.name = 'stone truck';
   column.rotation.order = 'YXZ'; // turn to face its heading first, then spin about its own long axis
+  const AXIS = 0.45; // the column's axis above whatever it rests on
 
   // a stone sled: two runners and a plank deck (the block sits on it; its top is 0.4 m up)
   const sled = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.2, 4.2).translate(0, 0.3, 0), wood);
@@ -214,7 +215,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   const put = (obj, x, y, z, heading = obj.rotation.y) => { obj.position.set(x, y, z); obj.rotation.y = heading; };
   const sledTo = (x, z, heading) => put(sled, x, groundAt(x, z), z, heading);
   const blockOn = (obj, top, heading = obj.rotation.y) => put(block, obj.position.x, obj.position.y + top, obj.position.z, heading);
-  const deckOf = () => schooner.localToWorld(V2.set(0, 2.4, -1)).clone();
+  const deckOf = () => schooner.localToWorld(V2.set(0, 2.4 + AXIS, -1)).clone();
   const hang = (fall, from, obj, top) => fall(from, V.set(obj.position.x, obj.position.y + top, obj.position.z));
   const idleFall = (fall, apex) => fall(apex, V.copy(apex).add(new THREE.Vector3(0, -3, 0)));
   const rollersUnder = (x, y, z, heading, travelled, show = true) => {
@@ -468,12 +469,12 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         const heading = c0.heading + Math.PI / 2;
         const travelled = Math.hypot(latheAt[0] - eastDoor[0], latheAt[1] - eastDoor[1]) * u;
         if (t < 0.47) {
-          put(column, x, groundAt(x, z) + 0.4, z, heading);
+          put(column, x, groundAt(x, z) + 0.4 + AXIS, z, heading);
           column.rotation.x = -travelled / 0.42;
           rollersUnder(x, groundAt(x, z), z, c0.heading, travelled);
         } else {
           hideRollers();
-          put(column, latheAt[0], groundAt(latheAt[0], latheAt[1]) + 0.92, latheAt[1], heading);
+          put(column, latheAt[0], groundAt(latheAt[0], latheAt[1]) + 0.92 + AXIS, latheAt[1], heading);
           column.rotation.x = -(t - 0.47) * 60;
         }
         return { target: [lerp(eastDoor[0], latheAt[0], 0.6), lerp(eastDoor[1], latheAt[1], 0.6)], dist: 34, from: c0.heading + 2.2, tilt: 0.3 };
@@ -488,7 +489,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         column.visible = true;
         const u = ease(span(t, 0.05, 0.9));
         const x = lerp(latheAt[0], c0.x, u), z = lerp(latheAt[1], c0.z, u);
-        const y = lerp(groundAt(latheAt[0], latheAt[1]) + 0.1, groundAt(c0.x, c0.z) + 1.35, u);
+        const y = lerp(groundAt(latheAt[0], latheAt[1]) + 0.1, groundAt(c0.x, c0.z) + 1.35, u) + AXIS;
         put(column, x, y, z, c0.heading + Math.PI / 2);
         column.rotation.x = u * Math.hypot(latheAt[0] - c0.x, latheAt[1] - c0.z) / 0.42;
         return { target: [lerp(latheAt[0], c0.x, 0.5), lerp(latheAt[1], c0.z, 0.5)], dist: 30, from: c0.heading + 1.1, tilt: 0.3 };
@@ -503,7 +504,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
         column.rotation.x = 0;
         column.visible = true;
-        put(column, c.x, roadAt(c.x, c.z) + 1.35, c.z, c.heading + Math.PI / 2);
+        put(column, c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z, c.heading + Math.PI / 2);
         return { target: [c.x, c.z], dist: 42, from: c.heading + 2.4, tilt: 0.33 };
       },
     },
@@ -514,13 +515,13 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
         const c = cartPath.at(1);
         put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
         put(schooner, berth[0], world.tide * exag(), berth[1], W.rot);
-        const from = new THREE.Vector3(c.x, roadAt(c.x, c.z) + 1.35, c.z), to = deckOf();
+        const from = new THREE.Vector3(c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z), to = deckOf();
         const lift = ease(span(t, 0.05, 0.3)), across = ease(span(t, 0.3, 0.68)), lower = ease(span(t, 0.7, 0.92));
         const top = Math.max(from.y, to.y) + 4;
         column.position.set(lerp(from.x, to.x, across), t >= 0.92 ? to.y : lerp(lerp(from.y, top, lift), to.y, lower), lerp(from.z, to.z, across));
         column.rotation.y = lerpAngle(c.heading + Math.PI / 2, W.rot + Math.PI / 2, across);
         running.tackle = (t > 0.05 && t < 0.3) || (t > 0.7 && t < 0.92);
-        if (t < 0.97) hang(tackle, schooner.localToWorld(V2.set(0, 22, 5.5)).clone(), column, 0.9); else rope0(tackle);
+        if (t < 0.97) hang(tackle, schooner.localToWorld(V2.set(0, 22, 5.5)).clone(), column, 0.9 - AXIS); else rope0(tackle);
         // from the wharf side, looking across at the ship, so the sails don't hide the lift
         return { target: [lerp(c.x, berth[0], 0.5), lerp(c.z, berth[1], 0.5)], dist: 48, from: Math.atan2(-wside[0], -wside[1]) + 0.35, tilt: 0.42 };
       },
