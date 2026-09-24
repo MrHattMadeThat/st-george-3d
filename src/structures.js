@@ -218,7 +218,8 @@ export function buildStructures(data, { exag, groundY, toon }) {
       box(12, 6, L * 0.55, -W / 2 - 6, 0, L * 0.12, '#978e82'), gableRoof(12, L * 0.55, 6, 3, roof, 0.5).translate(-W / 2 - 6, 0, L * 0.12),
       gableEnds(12, L * 0.55, 6, 3, '#978e82').translate(-W / 2 - 6, 0, L * 0.12),
       windows(W, L, [2, 5.6], '#34414d', false), windows(12, L * 0.55, [2], '#34414d', false).translate(-W / 2 - 6, 0, L * 0.12),
-      box(4.5, 4.5, 0.3, 0, 0, L / 2 + 0.05, '#4a3326'), // big doors at the east end for stone
+      box(4.5, 4.5, 0.3, 0, 0, L / 2 + 0.05, '#4a3326'), // big doors at both ends: rough stone in at the west,
+      box(4.5, 4.5, 0.3, 0, 0, -L / 2 - 0.05, '#4a3326'), // finished work out at the east
       // yard stock: rough blocks and finished columns
       box(3, 1.8, 2, W / 2 + 6, 0, L / 2 - 6, '#b3503c'), box(2.4, 1.6, 2.6, W / 2 + 6.5, 0, L / 2 - 11, '#a8483a'), box(2, 1.2, 2, W / 2 + 5.5, 1.8, L / 2 - 6, '#c0604a'),
       tint(new THREE.CylinderGeometry(0.55, 0.55, 7, 10).rotateX(Math.PI / 2).translate(W / 2 + 10, 0.6, L / 2 - 20), '#c4574a'),

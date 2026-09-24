@@ -152,24 +152,37 @@ export function buildLife({ scene, data, world, camera }) {
     const derrickHorse = horse({ x: cx, z: cz, heading: 0, walking: false, speed: 1.2, harness: true });
     let capAngle = 0;
     const leader = person('quarryman', { action: 'idle', hat: 'cap' });
+    const tipY = 4.2 + Math.sin(0.58) * 7.5, tipZ = 7 + Math.cos(0.58) * 7.5; // boom tip, in the boom pivot's frame
     derrick = {
+      x: mx, z: mz, rot, reach: tipZ,
+      /** set by the journey to drive it: { swing (radians, in the quarry's frame), hookY (world), running } */
+      control: null,
+      /** where the hook hangs over the ground for a given swing */
+      hookXZ: (swing) => [mx + Math.sin(rot + swing) * tipZ, mz + Math.cos(rot + swing) * tipZ],
       update(dt, t) {
         g.position.set(mx, groundY(mx, mz) - 1.5, mz);
         g.rotation.y = rot;
-        // 22 s: lower at the face, lift, swing out over the floor, lower, swing back empty
-        const u = (t % 22) / 22;
-        const sm = (a, b) => { const v = Math.min(Math.max((u - a) / (b - a), 0), 1); return v * v * (3 - 2 * v); };
-        const swing = sm(0.36, 0.56) - sm(0.8, 0.98);
-        boomPivot.rotation.y = Math.PI + 0.25 - swing * 2.1;
-        const lift = sm(0.14, 0.34) - sm(0.58, 0.76);
-        const tipY = 3 + 4.2 + Math.sin(0.58) * 7.5, tipZ = 7 + Math.cos(0.58) * 7.5;
-        const loadY = 1 + lift * 6;
+        let loadY, running;
+        const c = derrick.control;
+        if (c) {
+          boomPivot.rotation.y = c.swing;
+          loadY = c.hookY - g.position.y - 3 - 0.75;
+          load.visible = false;
+          running = c.running;
+        } else {
+          // 22 s: lower at the face, lift, swing out over the floor, lower, swing back empty
+          const u = (t % 22) / 22;
+          const sm = (a, b) => { const v = Math.min(Math.max((u - a) / (b - a), 0), 1); return v * v * (3 - 2 * v); };
+          const swing = sm(0.36, 0.56) - sm(0.8, 0.98);
+          boomPivot.rotation.y = Math.PI + 0.25 - swing * 2.1;
+          loadY = 1 + (sm(0.14, 0.34) - sm(0.58, 0.76)) * 6;
+          load.visible = u > 0.1 && u < 0.76;
+          running = (u > 0.14 && u < 0.34) || (u > 0.58 && u < 0.76);
+        }
         load.position.set(0, loadY, tipZ);
-        load.visible = u > 0.1 && u < 0.76;
-        rope.position.set(0, (tipY + loadY) / 2, tipZ);
-        rope.scale.y = tipY - loadY;
+        rope.position.set(0, (tipY + loadY + 0.75) / 2, tipZ);
+        rope.scale.y = Math.max(0.1, tipY - loadY - 0.75);
         // the horse walks the capstan round only while the fall is running
-        const running = (u > 0.14 && u < 0.34) || (u > 0.58 && u < 0.76);
         if (running) capAngle += dt * 0.35;
         derrickHorse.walking = running;
         derrickHorse.x = cx + Math.cos(capAngle) * 4.5; derrickHorse.z = cz + Math.sin(capAngle) * 4.5;
@@ -536,7 +549,7 @@ export function buildLife({ scene, data, world, camera }) {
   // ------------------------------------------------------------------ each frame
   let t = 0;
   return {
-    group: life, crowd, herd, chips,
+    group: life, crowd, herd, chips, derrick,
     person, horse, rideOn, rideY,
     update(dt) {
       t += dt;

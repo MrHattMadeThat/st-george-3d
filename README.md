@@ -63,13 +63,26 @@ adds a figure; roles are `quarryman`, `stonecutter`, `townsman`, `gentleman`, `w
 
 ## The Stone's Journey
 
-Nine captioned steps that follow one block of red granite in the summer of 1874, the way the
-Bay of Fundy Red Granite Co. worked: split from the quarry ledge north of the canal → sled to
-the canal landing → scow west through the canal → down the Magaguadavic to the falls → the
-water-powered mill turns it into a polished column → a horse team takes it through town to the
-main wharf → loaded on a schooner → down the estuary on the high tide past the Red Store → out
-through Letete Passage, bound for Boston. Each caption names its source. The sled and the horse
-team are illustrations of how it could have been done; the rest follows Martin (2013).
+Thirteen captioned steps follow one block of red granite in the summer of 1874, the way the Bay
+of Fundy Red Granite Co. worked. Nothing floats into place; every hand-off is done by someone:
+
+1. The **horse derrick** lifts the block from the foot of the face (its horse walks the capstan
+   while the rope winds) and swings it onto a **sled**.
+2. A **horse team** drags the sled to the canal landing, the teamster walking alongside.
+3. Men hauling on **shear legs** swing the block onto a **scow**.
+4. and 5. **Polers** walk the scow through the canal and down the Magaguadavic to the mill landing.
+6. A second pair of shear legs lowers it onto a **stone truck**.
+7. A team draws the truck in at the mill's **west doors**.
+8. The finished **column** is rolled out of the east doors on **log rollers** to the **lathe**,
+   where it turns against wet sand while a polisher works it.
+9. Two men roll it up **skids** onto the wagon.
+10. The team hauls it through town and out onto the **main wharf**.
+11. The schooner's crew hauls it aboard on a **tackle** from the foremast.
+12. and 13. Down the estuary on the high tide, past the Red Store, and out through Letete Passage.
+
+Each caption names its source. The sleds, trucks, shear legs, rollers and skids are the ordinary
+tools of the trade, used here to show how it could have been done; the route and the companies
+follow Martin (2013).
 
 Steps are in [src/journey.js](src/journey.js): each has a title, a caption, a source, a length
 in seconds, and an `update(t)` that places the props for `t` from 0 to 1 and returns where the

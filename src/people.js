@@ -203,6 +203,18 @@ export const ACTIONS = {
     p.lean = 0.35 * (1 - high) - 0.05 * high; p.headPitch = -0.35 * high + 0.3 * (1 - high);
     p.tool = high > 0.5 ? null : { rx: 0.2 };
   },
+  // leaning into a load: rolling a column, shoving a block on rollers
+  push(p, t, f) {
+    ACTIONS.walk(p, t, { ...f, speed: f.moving === false ? 0 : 0.6 });
+    p.lean = 0.5; p.armLp = p.armRp = 1.45; p.armLr = -0.12; p.armRr = 0.12;
+    p.legL = p.legL * 0.8 + 0.25; p.legR = p.legR * 0.8 - 0.25;
+  },
+  // steadying a load as it swings on the fall
+  guide(p, t, f) {
+    ACTIONS.idle(p, t, f);
+    p.armLp = 1.3 + 0.1 * Math.sin(t * 1.3); p.armRp = 1.2 + 0.1 * Math.sin(t * 1.1 + 1); p.armLr = -0.1; p.armRr = 0.1;
+    p.lean = 0.15; p.headPitch = -0.15;
+  },
   wave(p, t) {
     p.armRp = 2.9; p.armRr = 0.3 + 0.35 * Math.sin(t * 7);
     p.bob = Math.sin(t * 1.6) * 0.01;
