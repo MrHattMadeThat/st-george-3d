@@ -4,9 +4,14 @@ A cartoon 3D model of the land around St. George, New Brunswick, in the Granite 
 years. It's built as a **stage for short animations** about the granite trade: quarry → canal →
 river → finishing sheds → wharf → schooner → out through Letete Passage.
 
-Session 1 is the landscape only: St. George, Lake Utopia, Bonny River, the Magaguadavic
-and its tidal estuary, Passamaquoddy Bay, and the Letang Peninsula down to Letete.
-Piskahegan is deliberately left off the board.
+The board covers St. George, Lake Utopia, Bonny River, the Magaguadavic and its tidal estuary,
+Passamaquoddy Bay, and the Letang Peninsula down to Letete. Piskahegan is deliberately left off.
+
+- **Session 1:** the landscape: hills, shores, tides, lakes, rivers, 1870s farms and forest.
+- **Session 2:** the town in detail (a 10 m inset around the falls with the Gorge, the old core
+  streets, houses, stores, churches), the Bay of Fundy Red Granite Co. mill with its dam and
+  flume, the bridges, wharves, the Red Store, the quarry face, villages and farmsteads, and the
+  first animation: **The Stone's Journey**.
 
 ## Running it
 
@@ -26,9 +31,25 @@ the internet at run time).
 | --- | --- |
 | `?preset=2` | start at a camera stop (1–9) |
 | `?clean` | start in clean view (no panel, for recording) |
+| `?journey` | start playing The Stone's Journey (with `?clean` for a recording) |
 | `?q=low` / `?q=high` | force the light or full picture (otherwise it lightens itself on slow computers) |
 
-Keys: **1–9** fly to the camera stops, **H** toggles clean view.
+Keys: **1–9** fly to the camera stops, **H** toggles clean view, **Space** plays or pauses the
+journey, **Esc** stops it and hands the camera back.
+
+## The Stone's Journey
+
+Nine captioned steps that follow one block of red granite in the summer of 1874, the way the
+Bay of Fundy Red Granite Co. worked: split from the quarry ledge north of the canal → sled to
+the canal landing → scow west through the canal → down the Magaguadavic to the falls → the
+water-powered mill turns it into a polished column → a horse team takes it through town to the
+main wharf → loaded on a schooner → down the estuary on the high tide past the Red Store → out
+through Letete Passage, bound for Boston. Each caption names its source. The sled and the horse
+team are illustrations of how it could have been done; the rest follows Martin (2013).
+
+Steps are in [src/journey.js](src/journey.js): each has a title, a caption, a source, a length
+in seconds, and an `update(t)` that places the props for `t` from 0 to 1 and returns where the
+camera should look. New stories can be written the same way.
 Mouse: left-drag pans, right-drag turns and tilts, the wheel zooms toward the cursor.
 
 ## Using it as a stage
@@ -62,6 +83,10 @@ flyTo('4'); // or flyTo('The quarry ledges')
 | `setTide(m)` | −3.5 (low water) to +3.5 (high water) |
 | `setExag(k)`, `setTrees(f)` | hill height multiplier, share of trees shown (0–1) |
 | `onFrame(fn)` | `fn(dt, elapsed)` every frame; returns an unsubscribe function |
+| `journey` | `play()`, `pause()`, `go(step)`, `stop()`, `steps`, `state` |
+| `world.props` | makers for props: `block()`, `column()`, `scow()`, `schooner()`, `wagon()`, `person(colour)` |
+| `data.meta.structures` | where the mill, dam, flume, bridges, wharves, Red Store, old pine and quarry are |
+| `route.cart` | `[x, z]` points: the mill yard → through town → the main wharf |
 
 Hills are drawn taller than life (2× by default). Anything placed on the ground should use
 `groundY`, not `heightAt`, so it sits on the surface at any setting.
@@ -85,6 +110,14 @@ raw data in `data/raw/` into the files in `public/data/`:
 - **Utopia Granite**: the red belt and its ledges follow Gwen Martin's Maps 2 and 3; ledges are
   thickest along its southern edge between the Magaguadavic and Lake Utopia, where the quarries were.
 - **The Gulley** (flooded by the 1902 pulp mill dam) is drained back to 1874 dry ground.
+- **The town** (`town-*.bin`, `town-*.png`): a 10 m inset around the falls and the Basin, drawn in
+  a hole cut in the 30 m ground. The Gorge runs from the dam below the upper bridge to the lower
+  bridge, with a stepped cascade and rock walls. Streets are only the old core streets named on
+  Martin's Map 4 (`data/raw/osm-town.json`, today's lines). Houses are placed along them, thickest
+  between the falls and the Basin; villages and farmsteads get a few houses and barns each.
+- **Named structures** (`meta.structures`) are placed from Martin's Map 4: the Bay of Fundy mill
+  (No. 1), the dam and flume, the upper (Brunswick Street) and lower (South Street) bridges, the
+  main wharf, the old white pine. The Red Store wharf follows Map 2.
 
 `data/preview.png` is a top-down check image written by every build. `PROBE="lat,lon;..."`
 prints what the build decided at a point; `ASCII="lat,lon,cells"` prints the land/sea mask
@@ -92,14 +125,15 @@ around it.
 
 ## Known limits
 
-- No buildings, roads, wharves, dams or railways yet. The falls are one simple cascade; Map 4
-  shows upper falls, a dam, lower falls and The Gorge. A detailed town-and-falls model is the
-  natural next step.
+- Houses, stores and barns are generic 1870s shapes that show how the town was laid out, not
+  particular buildings. The mill, dam, flume, bridges and wharves are placed from Map 4 but their
+  shapes are imagined. Churches stand at today's church sites; their 1874 sites are unconfirmed.
+- No roads outside the town and no railway (the Grand Southern reached St. George in 1880).
 - Shorelines and lake levels are modern. Places marked **\*** were placed by eye from maps or
-  written descriptions: the quarries, the first shed, the Red Store wharf, the first St. George,
-  Letete Passage.
-- The terrain grid is 30 m, fine for the whole-area stage but too coarse for close-ups of a
-  single quarry or shed. Those scenes will want their own detailed insets.
+  written descriptions: the quarries, the first shed, the mill, the wharves, the old pine, the
+  first St. George, Letete Passage.
+- Outside the town the ground is 30 m, so the quarry face stands on the hillside rather than being
+  cut into it. A second detailed inset around the quarry would fix that.
 
 ## Sources
 

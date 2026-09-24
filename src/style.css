@@ -61,6 +61,32 @@ footer button {
 }
 footer button:hover { background: var(--gold); }
 
+/* the journey */
+.transport { display: flex; gap: 6px; align-items: center; }
+.transport button { white-space: nowrap; padding: 7px 12px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fffaf0; font: 700 13px var(--sans); color: var(--ink); cursor: pointer; }
+.transport button.primary { background: var(--granite); color: #fff; }
+.transport button:hover { background: var(--gold); color: var(--ink); }
+.speed { margin-left: auto; font-size: 12px; display: flex; gap: 4px; align-items: center; }
+.speed select { font: 600 12px var(--sans); border: 1.5px solid var(--ink); border-radius: 6px; background: #fffaf0; padding: 3px; }
+.steps { margin: 2px 0 0; padding-left: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 2px; }
+.steps li button { width: 100%; text-align: left; border: 0; background: none; padding: 3px 6px; border-radius: 6px; font: 13px var(--sans); color: var(--ink); cursor: pointer; display: flex; gap: 8px; }
+.steps li button::before { counter-increment: step; content: counter(step); font-weight: 700; color: var(--granite-dark); min-width: 1em; }
+.steps li button:hover { background: var(--paper-2); }
+.steps li.current button { background: var(--gold); font-weight: 700; }
+.steps li.done button { color: var(--ink-soft); }
+
+#caption {
+  position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 6;
+  width: min(760px, calc(100vw - 32px)); padding: 14px 20px 12px;
+  background: rgba(246, 239, 223, 0.95); border: 2px solid var(--ink); border-radius: 14px; box-shadow: var(--shadow);
+}
+body:not(.clean) #caption { left: calc(50% + 166px); width: min(700px, calc(100vw - 364px)); }
+#caption p { margin: 0; }
+.cap-step { font: 700 12px var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--granite-dark); }
+.cap-text { font: 19px/1.4 var(--serif); margin-top: 4px !important; }
+.cap-source { font-size: 11px; color: var(--ink-soft); font-style: italic; margin-top: 6px !important; }
+@media (max-width: 700px) { body:not(.clean) #caption { left: 50%; width: calc(100vw - 16px); bottom: calc(45vh + 16px); } .cap-text { font-size: 15px; } }
+
 /* map labels */
 .label { font-family: var(--serif); pointer-events: none; white-space: nowrap; user-select: none;
   text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px rgba(255,255,255,0.8); }

@@ -8,12 +8,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { buildStructures, makeProps } from './structures.js';
 
 const SEABED_FLOOR = -60;
 const BASE = -80;
 
 export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
-  const { meta, height, water, paint, masks } = data;
+  const { meta, height, water, paint, masks, town } = data;
+  const T = meta.town;
+  const townRect = new THREE.Vector4(T.x0, T.z0, T.x1, T.z1);
   const { w: MW, h: MH, cell } = meta.mesh;
   const { xmin, xmax, zmin, zmax } = meta.extent;
   const stride = quality === 'low' ? 2 : 1;
@@ -55,9 +58,37 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeVertexNormals();
-    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, new THREE.Vector4(xmin, zmin, 1 / pw, 1 / ph)));
+    const paintExt = new THREE.Vector4(xmin, zmin, 1 / pw, 1 / ph);
+    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, paintExt, { hole: townRect }));
     terrain.name = 'terrain';
     ground.add(terrain);
+
+    // The town around the falls at 10 m, drawn in the hole left in the ground above.
+    const tpos = new Float32Array(town.nx * town.nz * 3), tuv = new Float32Array(town.nx * town.nz * 2);
+    const tpw = T.pw * T.paintCell, tph = T.ph * T.paintCell;
+    for (let j = 0; j < town.nz; j++) for (let i = 0; i < town.nx; i++) {
+      const k = j * town.nx + i, x = T.x0 + i * T.cell, z = T.z0 + j * T.cell;
+      tpos[k * 3] = x; tpos[k * 3 + 1] = town.h[k]; tpos[k * 3 + 2] = z;
+      tuv[k * 2] = (x - T.x0) / tpw; tuv[k * 2 + 1] = (z - T.z0) / tph;
+    }
+    const tidx = new Uint32Array((town.nx - 1) * (town.nz - 1) * 6);
+    q = 0;
+    for (let j = 0; j < town.nz - 1; j++) for (let i = 0; i < town.nx - 1; i++) {
+      const a = j * town.nx + i, b = a + 1, c = a + town.nx, d = c + 1;
+      tidx.set((i + j) & 1 ? [a, c, b, b, c, d] : [a, c, d, a, d, b], q);
+      q += 6;
+    }
+    const tg = new THREE.BufferGeometry();
+    tg.setAttribute('position', new THREE.BufferAttribute(tpos, 3));
+    tg.setAttribute('uv', new THREE.BufferAttribute(tuv, 2));
+    tg.setIndex(new THREE.BufferAttribute(tidx, 1));
+    tg.computeVertexNormals();
+    data.townPaint.flipY = false;
+    data.townPaint.colorSpace = THREE.SRGBColorSpace;
+    data.townPaint.anisotropy = 8;
+    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, { townMasks: data.townMasks }));
+    townGround.name = 'town-ground';
+    ground.add(townGround);
   }
 
   // The board's cut edges, like a cake: topsoil, subsoil, red granite, dark rock.
@@ -119,6 +150,16 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   seaTex.needsUpdate = true;
   const extent = new THREE.Vector4(xmin, zmin, 1 / (cell * MW), 1 / (cell * MH));
   const half = new THREE.Vector2(0.5 / MW, 0.5 / MH);
+  // the same two lookups for the 10 m town grid
+  const townHeightTex = new THREE.DataTexture(town.h, town.nx, town.nz, THREE.RedFormat, THREE.FloatType);
+  townHeightTex.minFilter = townHeightTex.magFilter = THREE.LinearFilter;
+  townHeightTex.needsUpdate = true;
+  const townSeaMask = new Uint8Array(town.nx * town.nz);
+  for (let k = 0; k < townSeaMask.length; k++) townSeaMask[k] = town.w[k] === data.SEA ? 255 : 0;
+  const townSeaTex = new THREE.DataTexture(townSeaMask, town.nx, town.nz, THREE.RedFormat, THREE.UnsignedByteType);
+  townSeaTex.minFilter = townSeaTex.magFilter = THREE.LinearFilter;
+  townSeaTex.needsUpdate = true;
+  const townExt = new THREE.Vector4(1 / (T.cell * town.nx), 1 / (T.cell * town.nz), 0.5 / town.nx, 0.5 / town.nz);
   const seaLevel = { value: 1.5 };
 
   function waterMaterial(kind) {
@@ -133,10 +174,13 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     uniforms.uHeight.value = heightTex;
     uniforms.uSea.value = seaTex;
     uniforms.uExt.value = extent;
+    Object.assign(uniforms, {
+      uTownH: { value: townHeightTex }, uTownSea: { value: townSeaTex }, uTownExt: { value: townExt }, uTownRect: { value: townRect },
+    });
     const m = new THREE.ShaderMaterial({
       uniforms, vertexShader: WATER_VS, fragmentShader: WATER_FS,
       transparent: true, depthWrite: false, fog: true,
-      side: kind === 'wall' ? THREE.DoubleSide : THREE.FrontSide,
+      side: kind === 'wall' || kind === 'river' ? THREE.DoubleSide : THREE.FrontSide, // ribbons wind either way
       defines: kind === 'wall' ? { WALL: 1 } : {},
     });
     waterUniforms.push(m.uniforms);
@@ -183,17 +227,23 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   // Lakes and the wider rivers: flat quads on the grid wherever the build found inland water.
   {
     const pos = [], lvl = [];
-    for (let j = 0; j + stride < MH; j += stride) for (let i = 0; i + stride < MW; i += stride) {
-      const k = [j * MW + i, j * MW + i + stride, (j + stride) * MW + i, (j + stride) * MW + i + stride];
-      const w = k.map((q) => (water[q] === data.SEA ? NaN : water[q]));
-      const have = w.filter((v) => !Number.isNaN(v));
-      if (!have.length) continue;
-      const avg = have.reduce((a, b) => a + b, 0) / have.length;
-      const W = w.map((v) => (Number.isNaN(v) ? avg : v));
-      const x0 = xmin + i * cell, x1 = x0 + stride * cell, z0 = zmin + j * cell, z1 = z0 + stride * cell;
-      pos.push(x0, W[0], z0, x0, W[2], z1, x1, W[1], z0, x1, W[1], z0, x0, W[2], z1, x1, W[3], z1);
-      lvl.push(W[0], W[2], W[1], W[1], W[2], W[3]);
-    }
+    const quads = (g, x0g, z0g, step, skip) => {
+      for (let j = 0; j + step < g.nz; j += step) for (let i = 0; i + step < g.nx; i += step) {
+        const x0 = x0g + i * g.cell, x1 = x0 + step * g.cell, z0 = z0g + j * g.cell, z1 = z0 + step * g.cell;
+        if (skip(x0, z0, x1, z1)) continue;
+        const k = [j * g.nx + i, j * g.nx + i + step, (j + step) * g.nx + i, (j + step) * g.nx + i + step];
+        const w = k.map((q) => (g.w[q] === data.SEA ? NaN : g.w[q]));
+        const have = w.filter((v) => !Number.isNaN(v));
+        if (!have.length) continue;
+        const avg = have.reduce((a, b) => a + b, 0) / have.length;
+        const W = w.map((v) => (Number.isNaN(v) ? avg : v));
+        pos.push(x0, W[0], z0, x0, W[2], z1, x1, W[1], z0, x1, W[1], z0, x0, W[2], z1, x1, W[3], z1);
+        lvl.push(W[0], W[2], W[1], W[1], W[2], W[3]);
+      }
+    };
+    const insideTown = (x0, z0, x1, z1) => x0 >= T.x0 && x1 <= T.x1 && z0 >= T.z0 && z1 <= T.z1;
+    quads(data.main, xmin, zmin, stride, insideTown);
+    quads(town, T.x0, T.z0, 1, () => false);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     addWaterAttrs(g, lvl);
@@ -238,21 +288,23 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
         }
       }
     }
-    // Magaguadavic Falls: the drop from the river above to the tidal basin below.
+    // Magaguadavic Falls: white water down the Gorge, from the dam to the lower bridge.
     {
-      const [fx, fz] = meta.anchors.falls, [bx, bz] = meta.anchors.basin;
-      let tx = bx - fx, tz = bz - fz; const len = Math.hypot(tx, tz); tx /= len; tz /= len;
-      const lip = data.inlandWaterAt(fx - tx * 20, fz - tz * 20);
-      const top = Number.isNaN(lip) ? 9.5 : lip;
-      const width = 46, run = [[fx - tx * 25, fz - tz * 25, top], [fx + tx * 5, fz + tz * 5, top - 0.5], [fx + tx * 40, fz + tz * 40, meta.highWater - 3.5], [fx + tx * 75, fz + tz * 75, -3]];
+      const G = meta.gorge;
+      const width = 24;
       let dist = 0;
-      for (let q = 0; q + 1 < run.length; q++) {
-        const [ax, az, ay] = run[q], [cx, cz, cy] = run[q + 1];
-        const quad = [[ax, ay, az, -1], [ax, ay, az, 1], [cx, cy, cz, -1], [cx, cy, cz, -1], [ax, ay, az, 1], [cx, cy, cz, 1]];
-        const d0 = dist; dist += Math.hypot(cx - ax, cz - az);
-        for (const [x, y, z, side] of quad) {
-          pos.push(x - tz * side * width / 2, y, z + tx * side * width / 2);
-          lvl.push(y); flow.push(y === ay && x === ax ? d0 : dist); rapid.push(q === 0 ? 0.4 : 1);
+      const side = G.map((p, q) => {
+        const a = G[Math.max(0, q - 1)], b = G[Math.min(G.length - 1, q + 1)];
+        let tx = b[0] - a[0], tz = b[1] - a[1]; const len = Math.hypot(tx, tz) || 1; tx /= len; tz /= len;
+        if (q) dist += Math.hypot(p[0] - G[q - 1][0], p[1] - G[q - 1][1]);
+        const drop = Math.max(0, (a[2] - b[2]) / len);
+        const w = width * (q === 0 ? 1.6 : 1);
+        return [[p[0] - tz * w / 2, p[2] + 0.1, p[1] + tx * w / 2], [p[0] + tz * w / 2, p[2] + 0.1, p[1] - tx * w / 2], dist, 0.45 + smoothstep(0.01, 0.06, drop)];
+      });
+      for (let q = 0; q + 1 < side.length; q++) {
+        const [L0, R0, d0, r0] = side[q], [L1, R1, d1, r1] = side[q + 1];
+        for (const [v, d, r] of [[L0, d0, r0], [R0, d0, r0], [L1, d1, r1], [L1, d1, r1], [R0, d0, r0], [R1, d1, r1]]) {
+          pos.push(...v); lvl.push(v[1]); flow.push(d); rapid.push(Math.min(1, r));
         }
       }
     }
@@ -320,6 +372,24 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   }
   buildRoute();
 
+  // ------------------------------------------------------------------ buildings and works
+
+  // world y of the ground, or of a lake or river where there is one (not the tide)
+  const surfaceY = (x, z) => {
+    const w = data.inlandWaterAt(x, z);
+    return Math.max(data.heightAt(x, z), Number.isNaN(w) ? -Infinity : w) * ground.scale.y;
+  };
+  let structures = null;
+  function placeStructures() {
+    if (structures) {
+      scene.remove(structures);
+      structures.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+    }
+    structures = buildStructures(data, { exag: ground.scale.y, groundY: surfaceY, toon });
+    scene.add(structures);
+  }
+  placeStructures();
+
   // ------------------------------------------------------------------ controls for the page
 
   function setExag(e) {
@@ -327,6 +397,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     trees.place(e);
     routeMats.length = 0;
     buildRoute();
+    placeStructures();
   }
   trees.place(exag);
 
@@ -338,7 +409,9 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   }
 
   return {
-    ground, trees, clouds, sky, route,
+    ground, trees, clouds, sky, route, toon, surfaceY,
+    get structures() { return structures; },
+    props: makeProps(toon),
     get exag() { return ground.scale.y; },
     setExag,
     get tide() { return seaLevel.value; },
@@ -477,15 +550,19 @@ function buildClouds(meta, toon) {
 // reeds are drawn per pixel from masks.png so they stay crisp at any distance. The lot grid,
 // hash and centre test match fieldAt() and the tree rule in the build.
 const FIELD_COLORS = ['#d6c468', '#c4d06c', '#8cbe56', '#96724c', '#b6b868', '#e2d68c'];
-function groundMaterial(paint, masks, paintExt) {
+function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null } = {}) {
   masks.flipY = false;
   masks.colorSpace = THREE.NoColorSpace;
+  if (townMasks) { townMasks.flipY = false; townMasks.colorSpace = THREE.NoColorSpace; }
   const m = new THREE.MeshLambertMaterial({ map: paint });
+  m.defines = { ...(hole ? { HOLE: 1 } : {}), ...(townMasks ? { TOWN: 1 } : {}) };
   const fields = FIELD_COLORS.map((c) => new THREE.Color(c));
   const hedge = new THREE.Color('#5c7840');
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uMasks = { value: masks };
     shader.uniforms.uPaintExt = { value: paintExt };
+    shader.uniforms.uHole = { value: hole ?? new THREE.Vector4() };
+    shader.uniforms.uTownMasks = { value: townMasks };
     shader.uniforms.uFields = { value: fields };
     shader.uniforms.uHedge = { value: hedge };
     shader.vertexShader = shader.vertexShader
@@ -495,6 +572,7 @@ function groundMaterial(paint, masks, paintExt) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos;
         uniform sampler2D uMasks; uniform vec4 uPaintExt; uniform vec3 uFields[6]; uniform vec3 uHedge;
+        uniform vec4 uHole; uniform sampler2D uTownMasks;
         vec2 h22(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
         // distance to the nearest crack between Voronoi cells: blocky, jointed rock
         float cracks(vec2 p) {
@@ -511,9 +589,17 @@ function groundMaterial(paint, masks, paintExt) {
           return float(h ^ (h >> 16u)) / 4294967296.0;
         }`)
       .replace('#include <map_fragment>', `
+        #ifdef HOLE
+          if (vWPos.x > uHole.x + 0.2 && vWPos.x < uHole.z - 0.2 && vWPos.z > uHole.y + 0.2 && vWPos.z < uHole.w - 0.2) discard;
+        #endif
         vec3 paintCol = texture2D(map, vMapUv).rgb;
-        vec3 mk = texture2D(uMasks, vMapUv).rgb;
+        vec3 mk = texture2D(uMasks, (vWPos.xz - uPaintExt.xy) * uPaintExt.zw).rgb;
         float farmland = mk.r;
+        #ifdef TOWN
+          vec3 tm = texture2D(uTownMasks, vMapUv).rgb; // street, yard, rock
+          if (tm.r > 0.3 || tm.g > 0.5) farmland = 0.0;
+          mk.g = max(mk.g, tm.b) * (1.0 - tm.r);
+        #endif
         const float ANG = 0.5;
         vec2 lot = vec2(vWPos.x * cos(ANG) - vWPos.z * sin(ANG), vWPos.x * sin(ANG) + vWPos.z * cos(ANG)) / vec2(150.0, 90.0);
         ivec2 cellId = ivec2(floor(lot));
@@ -602,6 +688,7 @@ const WATER_VS = /* glsl */ `
 
 const WATER_FS = /* glsl */ `
   uniform sampler2D uHeight; uniform sampler2D uSea; uniform vec4 uExt; uniform vec2 uHalf;
+  uniform sampler2D uTownH; uniform sampler2D uTownSea; uniform vec4 uTownExt; uniform vec4 uTownRect;
   uniform float uTime; uniform int uKind;
   uniform vec3 uShallow, uDeep, uFoam;
   varying vec3 vWorld; varying float vLevel; varying float vFlow; varying float vRapid; varying float vWall;
@@ -621,10 +708,12 @@ const WATER_FS = /* glsl */ `
       gl_FragColor = vec4(col, mix(0.88, 0.7, t));
     #else
       vec2 uv = vec2((vWorld.x - uExt.x) * uExt.z, (vWorld.z - uExt.y) * uExt.w) + uHalf;
-      float groundH = texture2D(uHeight, uv).r;
+      bool inTown = vWorld.x > uTownRect.x && vWorld.x < uTownRect.z && vWorld.z > uTownRect.y && vWorld.z < uTownRect.w;
+      vec2 tuv = (vWorld.xz - uTownRect.xy) * uTownExt.xy + uTownExt.zw;
+      float groundH = inTown ? texture2D(uTownH, tuv).r : texture2D(uHeight, uv).r;
       float depth = vLevel - groundH;
       if (uKind != 2 && depth < -0.05) discard;
-      if (uKind == 0 && texture2D(uSea, uv).r < 0.5) discard; // lakes and low ground are not the sea
+      if (uKind == 0 && (inTown ? texture2D(uTownSea, tuv).r : texture2D(uSea, uv).r) < 0.5) discard; // lakes and low ground are not the sea
       float d = max(depth, 0.0);
       vec3 col = mix(uShallow, uDeep, smoothstep(0.4, uKind == 0 ? 22.0 : 9.0, d));
 

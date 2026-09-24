@@ -41,6 +41,21 @@ export const PLACES = [
     source: `${MARTIN}, p. 13 and Map 4 (No. 1)`,
   },
   {
+    name: 'Bay of Fundy Co. mill', kind: 'site', tier: 3, structure: 'mill', approx: true,
+    note: 'The finishing mill of the Bay of Fundy Red Granite Co., on the east side of the falls. It cost $75,000, ran day and night on water power, and turned out columns, monuments, urns and bases. The company failed in 1879; Milne, Coutts & Co. later worked the mill for decades.',
+    source: `${MARTIN}, pp. 13–16 and Map 4 (No. 1); ${GREARSON}`,
+  },
+  {
+    name: 'Main wharf', kind: 'site', tier: 3, structure: 'wharf', approx: true,
+    note: 'The main wharf on St. George Basin, just below the lower bridge. Schooners loaded granite here for ports along the Eastern Seaboard.',
+    source: `${MARTIN}, Map 4 and photographs on pp. 18–19`,
+  },
+  {
+    name: 'The old white pine', kind: 'site', tier: 3, structure: 'oldPine', approx: true,
+    note: 'A windswept white pine on the bank of the Gorge. It is still standing, and is thought to be one of the oldest trees in New Brunswick.',
+    source: `${MARTIN}, p. 16 and Map 4`,
+  },
+  {
     name: 'St. George Basin', kind: 'site', tier: 2, anchor: 'basin',
     note: 'The tidal basin below the gorge, where schooners loaded. In August 1873 the schooner Ben Bolt sailed from here with the Bay of Fundy company’s first shipment of granite for New York.',
     source: `${MARTIN}, p. 12`,
@@ -95,6 +110,7 @@ export const SOURCES = [MARTIN, OHALLORAN, GREARSON];
 // Where a place or preset sits, in local metres.
 export function locate(data, p) {
   if (p.anchor) { const [x, z] = data.meta.anchors[p.anchor]; return { x, z }; }
+  if (p.structure) { const s = data.meta.structures[p.structure]; return { x: s.x, z: s.z }; }
   return data.toLocal(p.at[0], p.at[1]);
 }
 
@@ -123,7 +139,7 @@ export function buildLabels(data, scene, onPick) {
         const { x, z, place } = o.userData;
         const w = data.inlandWaterAt(x, z);
         const base = Number.isNaN(w) ? Math.max(data.heightAt(x, z), data.meta.highWater) : w;
-        o.position.set(x, base * exag + (place.kind === 'site' ? 40 : 25), z);
+        o.position.set(x, base * exag + (place.kind === 'site' ? (place.structure ? 30 : 40) : 25), z);
       }
     },
     update(camera, show) {

@@ -4,6 +4,7 @@ import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { loadData } from './data.js';
 import { buildWorld } from './world.js';
 import { PRESETS, SOURCES, buildLabels, locate } from './places.js';
+import { buildJourney } from './journey.js';
 
 const params = new URLSearchParams(location.search);
 const quality = params.get('q') || 'medium';
@@ -102,7 +103,11 @@ function stepFlight(dt) {
   controls.target.lerpVectors(flight.fromTarget, flight.target, e);
   if (flight.t >= 1) flight = null;
 }
-controls.addEventListener('start', () => { flight = null; document.querySelectorAll('.presets button').forEach((b) => b.classList.remove('active')); });
+controls.addEventListener('start', () => {
+  flight = null;
+  document.querySelectorAll('.presets button').forEach((b) => b.classList.remove('active'));
+  if (journey?.state.playing) journey.pause(); // grabbing the camera pauses the story
+});
 
 // ------------------------------------------------------------------ panel
 
@@ -112,7 +117,7 @@ for (const p of PRESETS) {
   b.type = 'button';
   b.dataset.key = p.key;
   b.innerHTML = `<kbd>${p.key}</kbd><span>${p.name}</span>`;
-  b.addEventListener('click', () => flyTo(p));
+  b.addEventListener('click', () => { journey.stop(); flyTo(p); });
   presetBox.appendChild(b);
 }
 
@@ -140,6 +145,7 @@ function setExag(e) {
   const k = e / world.exag;
   world.setExag(e);
   labels.place(e);
+  journey.refresh();
   controls.target.y *= k;
   camera.position.y = Math.max(camera.position.y, controls.target.y + 50);
   $('exag-val').textContent = `${e}× real`;
@@ -169,11 +175,46 @@ $('sources').innerHTML = SOURCES.map((s) => `<li>${s}</li>`).join('') +
   '<li>Map data © OpenStreetMap contributors, available under the Open Database Licence.</li>' +
   '<li>Elevation: AWS Terrain Tiles (Mapzen / Amazon), from Natural Resources Canada and other public sources.</li>';
 
+// ------------------------------------------------------------------ the Stone's Journey
+
+const journey = buildJourney({ scene, camera, controls, data, world, setTide });
+const stepList = $('j-steps');
+journey.steps.forEach((s, k) => {
+  const li = document.createElement('li');
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = s.title;
+  b.addEventListener('click', () => { flight = null; journey.go(k); journey.play(); });
+  li.appendChild(b);
+  stepList.appendChild(li);
+});
+let showCaptions = true;
+function journeyUI() {
+  const { step, playing, t } = journey.state;
+  const finished = step === journey.steps.length - 1 && t >= 1;
+  $('j-play').textContent = playing ? '❚❚ Pause' : step >= 0 && !finished ? '▶ Resume' : '▶ Play';
+  [...stepList.children].forEach((li, k) => { li.classList.toggle('current', k === step); li.classList.toggle('done', step >= 0 && k < step); });
+  const s = journey.steps[step];
+  $('caption').hidden = !s || !showCaptions;
+  if (s) {
+    $('cap-step').textContent = `${step + 1} of ${journey.steps.length} · ${s.title}`;
+    $('cap-text').textContent = s.text;
+    $('cap-source').textContent = `Source: ${s.source}`;
+  }
+}
+journey.state.onChange = journeyUI;
+$('j-play').addEventListener('click', () => { flight = null; if (journey.state.playing) journey.pause(); else journey.play(); });
+$('j-stop').addEventListener('click', () => journey.stop());
+$('j-speed').addEventListener('change', (e) => { journey.state.speed = +e.target.value; });
+$('opt-captions').addEventListener('change', (e) => { showCaptions = e.target.checked; journeyUI(); });
+
 addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement || about.open) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || about.open) return;
   if (e.key === 'h' || e.key === 'H') toggleClean();
+  if (e.key === ' ') { e.preventDefault(); $('j-play').click(); }
+  if (e.key === 'Escape') journey.stop();
   const p = PRESETS.find((q) => q.key === e.key);
-  if (p) flyTo(p);
+  if (p) { journey.stop(); flyTo(p); }
 });
 
 // ------------------------------------------------------------------ the stage API for animations
@@ -185,6 +226,8 @@ window.stage = {
   /** ground height in metres (no exaggeration) */ heightAt: data.heightAt,
   /** world-space y of the ground or water surface at x,z, with the current exaggeration */ groundY,
   flyTo, setTide, setExag, setTrees,
+  /** the Stone's Journey: play(), pause(), go(step), stop(), steps, state */
+  get journey() { return journey; },
   route: data.meta.route, anchors: data.meta.anchors,
   /** run fn(dt, elapsed) every frame; returns an unsubscribe function */
   onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -215,6 +258,7 @@ const fwd = new THREE.Vector3();
 let elapsed = 0, last = performance.now();
 flyTo(PRESETS.find((p) => p.key === (params.get('preset') || '1')) || PRESETS[0], 0);
 if (params.has('clean')) { document.body.classList.add('clean'); frame(); }
+if (params.has('journey')) journey.play();
 
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
@@ -228,6 +272,7 @@ renderer.setAnimationLoop((now) => {
 
   if ($('opt-tide-run').checked) { tideClock += dt * ((2 * Math.PI) / 60); setTide(+(Math.sin(tideClock) * 3.5).toFixed(2)); }
   world.update(dt);
+  if (!flight) journey.frame(dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 
