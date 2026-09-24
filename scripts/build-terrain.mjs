@@ -246,10 +246,14 @@ for (const e of osm) if (e.type === 'way' && e.tags?.natural === 'wetland' && e.
 // The Gulley, the ravine south-west of the falls, was flooded by the pulp mill dam in 1902
 // (Martin 2013, Map 4). In 1874 it was dry ground, so today's water there is taken out.
 const GULLEY = { x: toX(-66.8318), z: toZ(45.1283), r: 230 };
+// ...and its eastern arm and outlet beside the Gorge, below the dam (the 1902 pulp mill's flume
+// and tailrace): south of the dam line only, so the millpond above the falls stays
+const OUTLET = { x: toX(-66.8289), z: toZ(45.1283), r: 180, zDam: toZ(45.1298) };
 for (let c = 0; c < FN; c++) {
   if (!waterId[c]) continue;
-  const i = c % FW, j = (c - i) / FW;
-  if (Math.hypot(XMIN + (i + 0.5) * FINE - GULLEY.x, ZMIN + (j + 0.5) * FINE - GULLEY.z) < GULLEY.r) waterId[c] = 0;
+  const i = c % FW, j = (c - i) / FW, x = XMIN + (i + 0.5) * FINE, z = ZMIN + (j + 0.5) * FINE;
+  if (Math.hypot(x - GULLEY.x, z - GULLEY.z) < GULLEY.r) waterId[c] = 0;
+  if (z > OUTLET.zDam && Math.hypot(x - OUTLET.x, z - OUTLET.z) < OUTLET.r) waterId[c] = 0;
 }
 
 // lake level = median elevation of its cells
@@ -794,11 +798,12 @@ const structures = {};
   const [wx, wz] = at(45.12795, -66.82430), wb = (170 * Math.PI) / 180;
   structures.wharf = { x: wx, z: wz, rot: Math.atan2(Math.sin(wb), -Math.cos(wb)), length: 90, width: 14 };
   taken.push([wx, wz, 25]);
-  // "the distinctive, windswept White Pine on the right riverbank beyond the footbridge" (Map 4):
-  // two-thirds of the way down the Gorge, on its right (south-west) bank above the rock wall
-  const gp = gorge[Math.floor(gorge.length * 0.62)], gq = gorge[Math.floor(gorge.length * 0.62) + 1];
+  // "the distinctive, windswept White Pine on the right riverbank beyond the footbridge": 'right' as
+  // the c.1890s photograph looks UP the Gorge (p. 16). Map 4 puts it on the north-east (town,
+  // Brunswick Street) bank, just upstream of the footbridge, above the rock wall.
+  const gp = gorge[Math.floor(gorge.length * 0.56)], gq = gorge[Math.floor(gorge.length * 0.56) + 1];
   const gl = Math.hypot(gq[0] - gp[0], gq[1] - gp[1]);
-  const [px, pz] = [gp[0] - ((gq[1] - gp[1]) / gl) * 38, gp[1] + ((gq[0] - gp[0]) / gl) * 38];
+  const [px, pz] = [gp[0] + ((gq[1] - gp[1]) / gl) * 34, gp[1] - ((gq[0] - gp[0]) / gl) * 34];
   structures.oldPine = { x: px, z: pz };
   taken.push([px, pz, 12]);
   // the Red Store and its wharf at Breadalbane

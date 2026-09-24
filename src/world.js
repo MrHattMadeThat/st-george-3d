@@ -31,6 +31,14 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
 
   // ------------------------------------------------------------------ ground
 
+  const heightTex = new THREE.DataTexture(height, MW, MH, THREE.RedFormat, THREE.FloatType);
+  heightTex.minFilter = heightTex.magFilter = THREE.LinearFilter;
+  heightTex.needsUpdate = true;
+  const extent = new THREE.Vector4(xmin, zmin, 1 / (cell * MW), 1 / (cell * MH));
+  const half = new THREE.Vector2(0.5 / MW, 0.5 / MH);
+  const seaLevel = { value: 1.5 };
+  const env = { heightTex, extent, half, highWater: meta.highWater, tide: seaLevel };
+
   paint.flipY = false;
   paint.colorSpace = THREE.SRGBColorSpace;
   paint.anisotropy = 8;
@@ -59,7 +67,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.computeVertexNormals();
     const paintExt = new THREE.Vector4(xmin, zmin, 1 / pw, 1 / ph);
-    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, paintExt, { hole: townRect, detail: quality !== 'low' }));
+    const terrain = new THREE.Mesh(g, groundMaterial(paint, masks, paintExt, env, { hole: townRect, detail: quality !== 'low' }));
     terrain.name = 'terrain';
     ground.add(terrain);
 
@@ -86,7 +94,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     data.townPaint.flipY = false;
     data.townPaint.colorSpace = THREE.SRGBColorSpace;
     data.townPaint.anisotropy = 8;
-    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, { townMasks: data.townMasks, detail: quality !== 'low' }));
+    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, env, { townMasks: data.townMasks, detail: quality !== 'low' }));
     townGround.name = 'town-ground';
     ground.add(townGround);
   }
@@ -139,17 +147,12 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
 
   // ------------------------------------------------------------------ water
 
-  const heightTex = new THREE.DataTexture(height, MW, MH, THREE.RedFormat, THREE.FloatType);
-  heightTex.minFilter = heightTex.magFilter = THREE.LinearFilter;
-  heightTex.needsUpdate = true;
   // 1 where the grid is tidal water, 0 elsewhere: the sea sheet only shows where this is set
   const seaMask = new Uint8Array(MW * MH);
   for (let k = 0; k < MW * MH; k++) seaMask[k] = water[k] === data.SEA ? 255 : 0;
   const seaTex = new THREE.DataTexture(seaMask, MW, MH, THREE.RedFormat, THREE.UnsignedByteType);
   seaTex.minFilter = seaTex.magFilter = THREE.LinearFilter;
   seaTex.needsUpdate = true;
-  const extent = new THREE.Vector4(xmin, zmin, 1 / (cell * MW), 1 / (cell * MH));
-  const half = new THREE.Vector2(0.5 / MW, 0.5 / MH);
   // the same two lookups for the 10 m town grid
   const townHeightTex = new THREE.DataTexture(town.h, town.nx, town.nz, THREE.RedFormat, THREE.FloatType);
   townHeightTex.minFilter = townHeightTex.magFilter = THREE.LinearFilter;
@@ -160,14 +163,13 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   townSeaTex.minFilter = townSeaTex.magFilter = THREE.LinearFilter;
   townSeaTex.needsUpdate = true;
   const townExt = new THREE.Vector4(1 / (T.cell * town.nx), 1 / (T.cell * town.nz), 0.5 / town.nx, 0.5 / town.nz);
-  const seaLevel = { value: 1.5 };
 
   function waterMaterial(kind) {
     const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uHeight: { value: heightTex }, uSea: { value: seaTex }, uExt: { value: extent }, uHalf: { value: half },
       uTime: { value: 0 }, uKind: { value: kind === 'sea' ? 0 : kind === 'lake' ? 1 : 2 },
-      uShallow: { value: new THREE.Color(kind === 'sea' ? '#6eaaa1' : '#7fa89a') },
-      uDeep: { value: new THREE.Color(kind === 'sea' ? '#285e72' : '#3b7277') },
+      uShallow: { value: new THREE.Color(kind === 'sea' ? '#7fb8ac' : kind === 'lake' ? '#86ae98' : '#8fb7a6') },
+      uDeep: { value: new THREE.Color(kind === 'sea' ? '#24586e' : kind === 'lake' ? '#2f5f6c' : '#3a6c74') },
       uFoam: { value: new THREE.Color('#f4fbff') },
     }]);
     uniforms.uLevel = seaLevel; // shared, so the tide moves every sea surface at once
@@ -254,8 +256,49 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
   }
 
   // Streams and small rivers as ribbons, following the build's downhill water surface.
+  // Where one runs into the sea it carries on as a tail draped over the flats, down to below the
+  // lowest tide, so at low water it still finds the sea; the shader hides whatever the tide covers.
   {
-    const pos = [], lvl = [], flow = [], rapid = [];
+    const pos = [], lvl = [], flow = [], rapid = [], across = [];
+    // pts: [{ x, z, y (water level, metres), d (distance along), r (0..1 white water) }]
+    const ribbon = (pts, width) => {
+      const side = pts.map((p, q) => {
+        const a = pts[Math.max(0, q - 1)], b = pts[Math.min(pts.length - 1, q + 1)];
+        let tx = b.x - a.x, tz = b.z - a.z; const len = Math.hypot(tx, tz) || 1; tx /= len; tz /= len;
+        const w = (typeof width === 'function' ? width(q, p) : width) / 2;
+        return [[p.x - tz * w, p.y, p.z + tx * w], [p.x + tz * w, p.y, p.z - tx * w]];
+      });
+      for (let q = 0; q + 1 < pts.length; q++) {
+        const [L0, R0] = side[q], [L1, R1] = side[q + 1], a = pts[q], b = pts[q + 1];
+        for (const [v, p, side] of [[L0, a, -1], [R0, a, 1], [L1, b, -1], [L1, b, -1], [R0, a, 1], [R1, b, 1]]) {
+          pos.push(...v); lvl.push(v[1]); flow.push(p.d); rapid.push(p.r); across.push(side);
+        }
+      }
+    };
+    // Follow the ground downhill from where a river meets the sea, favouring straight on, until
+    // it is below low water. Returns the draped points, starting at the river's mouth.
+    const LOW_WATER = -3.5 - 0.6;
+    const tail = (x, z, dx, dz, d0) => {
+      const out = [];
+      let h = data.heightAt(x, z), d = d0, stuck = 0;
+      const len = Math.hypot(dx, dz) || 1; dx /= len; dz /= len;
+      for (let n = 0; n < 400 && h > LOW_WATER; n++) {
+        let best = null;
+        for (let a = -1.1; a <= 1.1001; a += 0.275) {
+          const c = Math.cos(a), sn = Math.sin(a), ux = dx * c - dz * sn, uz = dx * sn + dz * c;
+          const nx = x + ux * 6, nz = z + uz * 6, nh = data.heightAt(nx, nz) + Math.abs(a) * 0.05;
+          if (!best || nh < best.h) best = { x: nx, z: nz, h: nh, ux, uz };
+        }
+        stuck = best.h >= h - 0.002 ? stuck + 1 : 0;
+        if (stuck > 25) break;
+        x = best.x; z = best.z; d += 6;
+        dx = dx * 0.6 + best.ux * 0.4; dz = dz * 0.6 + best.uz * 0.4;
+        const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+        h = data.heightAt(x, z);
+        out.push({ x, z, y: h + 0.12, d, r: 0 });
+      }
+      return out;
+    };
     for (const r of meta.rivers) {
       const P = r.pts;
       // runs of open river, plus one point either side so ribbons tuck into lakes and the sea
@@ -266,50 +309,44 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
         let e = k;
         while (e < P.length && P[e][3]) e++;
         const run = P.slice(Math.max(0, k - 1), Math.min(P.length, e + 1));
+        const open = e - k;
         k = e;
-        if (run.length < 2) continue;
+        if (run.length < 2 || open < 3) continue; // a stranded point or two is not a stream
         const width = Math.max(r.width, 12);
         let dist = 0;
-        const L = [], R = [];
-        for (let q = 0; q < run.length; q++) {
+        const pts = run.map((p, q) => {
+          if (q) dist += Math.hypot(p[0] - run[q - 1][0], p[1] - run[q - 1][1]);
           const a = run[Math.max(0, q - 1)], b = run[Math.min(run.length - 1, q + 1)];
-          let tx = b[0] - a[0], tz = b[1] - a[1];
-          const len = Math.hypot(tx, tz) || 1; tx /= len; tz /= len;
-          if (q) dist += Math.hypot(run[q][0] - run[q - 1][0], run[q][1] - run[q - 1][1]);
-          const drop = (a[2] - b[2]) / len;
-          const s = run[q][2] + 0.05;
-          L.push([run[q][0] - tz * width / 2, s, run[q][1] + tx * width / 2, dist, drop]);
-          R.push([run[q][0] + tz * width / 2, s, run[q][1] - tx * width / 2, dist, drop]);
-        }
-        for (let q = 0; q + 1 < run.length; q++) {
-          for (const v of [L[q], R[q], L[q + 1], L[q + 1], R[q], R[q + 1]]) {
-            pos.push(v[0], v[1], v[2]); lvl.push(v[1]); flow.push(v[3]); rapid.push(smoothstep(0.03, 0.12, v[4]));
-          }
-        }
+          const drop = (a[2] - b[2]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1);
+          return { x: p[0], z: p[1], y: p[2] + 0.05, d: dist, r: smoothstep(0.03, 0.12, drop) };
+        });
+        const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+        if (data.isSea(last.x, last.z)) {
+          const t = tail(last.x, last.z, last.x - prev.x, last.z - prev.z, last.d);
+          const n = pts.length;
+          ribbon(pts.concat(t), (q) => (q < n ? width : Math.max(6, width * (0.7 - 0.3 * Math.min(1, (q - n) / 40)))));
+        } else ribbon(pts, width);
       }
     }
-    // Magaguadavic Falls: white water down the Gorge, from the dam to the lower bridge.
+    // Magaguadavic Falls: white water down the Gorge, from the dam to the lower bridge, then on
+    // across the Basin's flats at low tide.
     {
       const G = meta.gorge;
-      const width = 24;
       let dist = 0;
-      const side = G.map((p, q) => {
+      const pts = G.map((p, q) => {
         const a = G[Math.max(0, q - 1)], b = G[Math.min(G.length - 1, q + 1)];
-        let tx = b[0] - a[0], tz = b[1] - a[1]; const len = Math.hypot(tx, tz) || 1; tx /= len; tz /= len;
+        const drop = Math.max(0, (a[2] - b[2]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1));
         if (q) dist += Math.hypot(p[0] - G[q - 1][0], p[1] - G[q - 1][1]);
-        const drop = Math.max(0, (a[2] - b[2]) / len);
-        const w = width * (q === 0 ? 1.6 : 1);
-        return [[p[0] - tz * w / 2, p[2] + 0.1, p[1] + tx * w / 2], [p[0] + tz * w / 2, p[2] + 0.1, p[1] - tx * w / 2], dist, 0.45 + smoothstep(0.01, 0.06, drop)];
+        return { x: p[0], z: p[1], y: p[2] + 0.1, d: dist, r: Math.min(1, 0.45 + smoothstep(0.01, 0.06, drop)) };
       });
-      for (let q = 0; q + 1 < side.length; q++) {
-        const [L0, R0, d0, r0] = side[q], [L1, R1, d1, r1] = side[q + 1];
-        for (const [v, d, r] of [[L0, d0, r0], [R0, d0, r0], [L1, d1, r1], [L1, d1, r1], [R0, d0, r0], [R1, d1, r1]]) {
-          pos.push(...v); lvl.push(v[1]); flow.push(d); rapid.push(Math.min(1, r));
-        }
-      }
+      const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+      const t = tail(last.x, last.z, last.x - prev.x, last.z - prev.z, last.d);
+      const n = pts.length;
+      ribbon(pts.concat(t), (q) => (q === 0 ? 38 : q < n ? 24 : Math.max(10, 24 - (q - n) * 0.5)));
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('top', new THREE.Float32BufferAttribute(across, 1)); // across the stream, -1 to 1
     addWaterAttrs(g, lvl, flow, rapid);
     const rivers = new THREE.Mesh(g, waterMaterial('river'));
     rivers.name = 'rivers';
@@ -446,17 +483,21 @@ function buildTrees(data, toon) {
   for (let k = T.n - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [order[k], order[r]] = [order[r], order[k]]; }
 
   const byKind = kinds.map(() => []);
-  const corridor = (data.railway?.points || []).map(([lat,lon]) => data.toLocal(lat,lon));
-  const railBounds = corridor.length ? {x0:Math.min(...corridor.map(p=>p.x))-95,x1:Math.max(...corridor.map(p=>p.x))+95,z0:Math.min(...corridor.map(p=>p.z))-95,z1:Math.max(...corridor.map(p=>p.z))+95} : null;
-  function nearRail(x,z) {
-    if (!railBounds || x<railBounds.x0 || x>railBounds.x1 || z<railBounds.z0 || z>railBounds.z1) return false;
-    return corridor.some((b,i) => {
-      if (!i) return false; const a = corridor[i-1], dx=b.x-a.x, dz=b.z-a.z;
-      const t = THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz || 1),0,1);
-      return Math.hypot(x-a.x-t*dx,z-a.z-t*dz)<80;
-    });
-  }
-  for (const k of order) if (!nearRail(T.pos[k*3],T.pos[k*3+1])) byKind[T.info[k * 2]]?.push(k);
+  // clearings made at runtime (the quarry tramway): polylines [[x, z], ...] with a radius r
+  const clearings = (data.clearings || []).map(({ pts, r }) => ({
+    pts, r,
+    box: [Math.min(...pts.map((p) => p[0])) - r, Math.max(...pts.map((p) => p[0])) + r, Math.min(...pts.map((p) => p[1])) - r, Math.max(...pts.map((p) => p[1])) + r],
+  }));
+  const cleared = (x, z) => clearings.some(({ pts, r, box }) => {
+    if (x < box[0] || x > box[1] || z < box[2] || z > box[3]) return false;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, az] = pts[i - 1], dx = pts[i][0] - ax, dz = pts[i][1] - az;
+      const t = THREE.MathUtils.clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+      if (Math.hypot(x - ax - t * dx, z - az - t * dz) < r) return true;
+    }
+    return false;
+  });
+  for (const k of order) if (!cleared(T.pos[k * 3], T.pos[k * 3 + 1])) byKind[T.info[k * 2]]?.push(k);
   const meshes = kinds.map((kind, t) => {
     const m = new THREE.InstancedMesh(kind.geo, mat, byKind[t].length);
     m.name = `trees:${kind.name}`;
@@ -644,7 +685,7 @@ const GROUND_DETAIL = `
     return col;
   }
 `;
-function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null, detail = true } = {}) {
+function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = null, detail = true } = {}) {
   masks.flipY = false;
   masks.colorSpace = THREE.NoColorSpace;
   if (townMasks) { townMasks.flipY = false; townMasks.colorSpace = THREE.NoColorSpace; }
@@ -659,12 +700,21 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
     shader.uniforms.uTownMasks = { value: townMasks };
     shader.uniforms.uFields = { value: fields };
     shader.uniforms.uHedge = { value: hedge };
+    shader.uniforms.uHTex = { value: env.heightTex };
+    shader.uniforms.uHExt = { value: env.extent };
+    shader.uniforms.uHHalf = { value: env.half };
+    shader.uniforms.uHighWater = { value: env.highWater };
+    shader.uniforms.uTide = env.tide; // shared with the water, so the wet shore follows the tide
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWN; varying float vH;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vH = transformed.y; // metres, before the hills are exaggerated
+        vWN = normalize(transpose(inverse(mat3(modelMatrix))) * objectNormal); // as drawn, exaggeration and all`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vWPos;
+        varying vec3 vWPos; varying vec3 vWN; varying float vH;
+        uniform sampler2D uHTex; uniform vec4 uHExt; uniform vec2 uHHalf; uniform float uHighWater; uniform float uTide;
         uniform sampler2D uMasks; uniform vec4 uPaintExt; uniform vec3 uFields[6]; uniform vec3 uHedge;
         uniform vec4 uHole; uniform sampler2D uTownMasks;
         vec2 h22(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
@@ -739,29 +789,87 @@ function groundMaterial(paint, masks, paintExt, { hole = null, townMasks = null,
           crop = kind;
           vec3 fc = uFields[kind];
           // furrows: faint stripes along each lot
-          fc *= 0.98 + 0.02 * sin(f.y * 1.3);
+          fc *= 0.94 + 0.12 * lotHash(cellId, 23u); // each lot its own shade
+          fc *= mix(1.0, 0.93 + 0.07 * sin(f.y * 1.3), 1.0 - smoothstep(0.6, 2.0, gFw)); // furrows once they can be seen
           float aa = fwidth(edgeDist) + 0.001;
           inLot = smoothstep(2.0 - aa, 6.0 + aa, edgeDist);
           paintCol = mix(paintCol, mix(uHedge, fc, inLot), smoothstep(0.3, 0.65, farmland) * 0.82);
         }
-        if (mk.g > 0.25) { // ledges: joints and a speckle of feldspar and quartz
+        if (mk.g > 0.25) { // ledges: weathered pink granite, jointed, grey lichen and moss in the cracks
           float c = cracks(vWPos.xz / 11.0);
           float aa2 = fwidth(c) + 0.002;
-          float speck = h22(floor(vWPos.xz / 1.6)).x;
-          vec3 rockCol = paintCol * (0.92 + 0.16 * speck);
-          rockCol = mix(rockCol * 0.82, rockCol, smoothstep(0.04 - aa2, 0.04 + aa2, c));
+          float wx = vn(vWPos.xz / 6.0);
+          vec3 rockCol = mix(paintCol, vec3(0.6, 0.52, 0.48), 0.45) * (0.9 + 0.2 * wx); // weathered paler than fresh stone
+          rockCol = mix(rockCol, vec3(0.6, 0.62, 0.55), smoothstep(0.6, 0.75, vn(vWPos.xz / 3.5 + 21.0)) * 0.45); // lichen
+          float joint = 1.0 - smoothstep(0.04 - aa2, 0.04 + aa2, c);
+          rockCol = mix(rockCol, vec3(0.3, 0.36, 0.22), joint * 0.7); // moss and soil in the joints
           paintCol = mix(paintCol, rockCol, smoothstep(0.25, 0.6, mk.g));
         }
-        if (mk.b > 0.5) { // marsh: tufts of sedge in little clumps, pools between
-          vec2 tp = vWPos.xz / 7.0;
-          vec2 o = h22(floor(tp));
-          float tuft = length(fract(tp) - 0.3 - 0.4 * o);
-          paintCol *= mix(0.78, 1.08, smoothstep(0.12, 0.3, tuft));
-          float pool = smoothstep(0.78, 0.8, h22(floor(vWPos.xz / 23.0)).x) * (1.0 - smoothstep(0.25, 0.45, length(fract(vWPos.xz / 23.0) - 0.5)));
-          paintCol = mix(paintCol, vec3(0.16, 0.3, 0.33), pool * 0.8);
+        float marsh = smoothstep(0.35, 0.65, mk.b);
+        if (marsh > 0.0) { // salt marsh and bog: sedge combed by the wind, straw and green, with dark pools
+          vec2 mp = vWPos.xz;
+          float comb = vn(vec2(mp.x / 1.6 + mp.y / 4.5, mp.y / 1.6 - mp.x / 6.0)) * 0.6 + vn(mp / 11.0) * 0.4;
+          vec3 sedge = mix(vec3(0.55, 0.54, 0.34), vec3(0.37, 0.46, 0.27), smoothstep(0.3, 0.7, comb));
+          vec3 mcol = mix(paintCol, sedge, 0.65);
+          float pn = vn(mp / 31.0) * 0.6 + vn(mp / 9.0 + 5.0) * 0.4;
+          float pool = smoothstep(0.72, 0.75, pn);
+          float rim = smoothstep(0.66, 0.72, pn) * (1.0 - pool);
+          mcol = mix(mcol, mcol * 0.8, rim); // wet, darker ground round each pool
+          mcol = mix(mcol, vec3(0.17, 0.25, 0.24), pool * 0.9); // peaty water
+          paintCol = mix(paintCol, mcol, marsh);
+        }
+
+        // ---- the land at large: broad patches, relief, rock on steep ground, forest floor, the shore
+        float lumP = dot(paintCol, vec3(0.3, 0.55, 0.15));
+        float greenP = smoothstep(0.015, 0.08, paintCol.g - max(paintCol.r, paintCol.b)) * (1.0 - marsh);
+        float m1 = vn(vWPos.xz / 230.0), m2 = vn(vWPos.xz / 70.0 + 11.0), m3 = vn(vWPos.xz / 19.0 + 37.0);
+        vec3 warm = paintCol * vec3(1.08, 1.05, 0.84), cool = paintCol * vec3(0.9, 1.0, 1.05);
+        paintCol = mix(paintCol, mix(cool, warm, smoothstep(0.28, 0.72, m1)), greenP * 0.6); // drier and lusher ground
+        paintCol *= 0.93 + 0.14 * (m1 * 0.5 + m2 * 0.35 + m3 * 0.15);
+        // relief from the height map: hollows darker and greener, crests lighter and drier
+        vec2 huv = (vWPos.xz - uHExt.xy) * uHExt.zw + uHHalf;
+        vec2 du = vec2(uHHalf.x * 2.0, 0.0), dv = vec2(0.0, uHHalf.y * 2.0);
+        float h0 = texture2D(uHTex, huv).r;
+        float lap = texture2D(uHTex, huv + du).r + texture2D(uHTex, huv - du).r + texture2D(uHTex, huv + dv).r + texture2D(uHTex, huv - dv).r - 4.0 * h0;
+        float hollow = clamp(lap / 4.0, -1.0, 1.0);
+        paintCol *= 1.0 - 0.08 * hollow;
+        paintCol = mix(paintCol, paintCol * vec3(0.92, 1.03, 0.95), max(hollow, 0.0) * greenP * 0.6);
+        // the forest floor under the trees: needles, moss and shade in patches
+        float forest = smoothstep(0.36, 0.28, lumP) * greenP * (1.0 - inLot);
+        float dap = vn(vWPos.xz / 3.2) * 0.6 + vn(vWPos.xz / 9.0 + 3.0) * 0.4;
+        paintCol = mix(paintCol, paintCol * (0.86 + 0.22 * dap), forest);
+        paintCol = mix(paintCol, vec3(0.34, 0.3, 0.2) * (0.8 + 0.4 * dap), forest * smoothstep(0.62, 0.78, vn(vWPos.xz / 13.0 + 9.0)) * 0.35);
+        // open meadow: tussocks a few metres across
+        paintCol *= mix(1.0, 0.93 + 0.14 * vn(vWPos.xz / 4.5 + 17.0), greenP * (1.0 - forest) * (1.0 - inLot));
+        // bare rock where the ground is steep: the Gorge walls, cliffs and quarry faces
+        float slope = 1.0 - vWN.y;
+        float rocky = smoothstep(0.3, 0.55, slope) * (1.0 - inLot) * step(uHighWater - 1.0, vH);
+        if (rocky > 0.0) {
+          vec3 rc = mix(vec3(0.5, 0.49, 0.46), vec3(0.6, 0.46, 0.41), smoothstep(0.1, 0.4, mk.g)); // grey rock, or pink granite on the belt
+          rc *= 0.84 + 0.3 * vn(vWPos.xz / 3.0);
+          float cr = cracks(vWPos.xz / 5.0);
+          rc = mix(rc * 0.62, rc, smoothstep(0.03, 0.09, cr));
+          rc = mix(rc, rc * vec3(0.85, 0.95, 0.8), smoothstep(0.62, 0.72, vn(vWPos.xz / 2.0)) * 0.5); // lichen
+          paintCol = mix(paintCol, rc, rocky * 0.85);
+        }
+        // the shore between the tides: wet mud and sand, channels, rockweed along the top
+        float tidal = smoothstep(uHighWater + 0.5, uHighWater - 0.3, vH);
+        if (tidal > 0.0) {
+          vec3 fl = mix(paintCol, vec3(0.5, 0.44, 0.36), 0.35);
+          vec2 wp = vWPos.xz + 30.0 * vec2(vn(vWPos.xz / 90.0), vn(vWPos.xz / 90.0 + 7.0));
+          float cn = vn(wp / 75.0) * 0.8 + vn(wp / 23.0) * 0.2; // long winding creeks, not a crackle
+          float gully = 1.0 - smoothstep(0.0, 0.022, abs(cn - 0.5));
+          fl = mix(fl, fl * vec3(0.6, 0.66, 0.7), gully * smoothstep(uHighWater - 0.8, uHighWater - 2.5, vH) * 0.8);
+          fl *= 0.92 + 0.14 * vn(vWPos.xz / 2.5); // ripples left by the tide
+          float weed = smoothstep(uHighWater - 0.1, uHighWater - 0.7, vH) * smoothstep(uHighWater - 3.0, uHighWater - 1.9, vH);
+          weed *= smoothstep(0.4, 0.62, vn(vWPos.xz / 4.0)) * (0.3 + 0.7 * max(rocky, smoothstep(0.1, 0.3, mk.g)) + 0.3);
+          fl = mix(fl, vec3(0.3, 0.27, 0.13), min(weed, 1.0) * 0.75);
+          float wet = 1.0 - smoothstep(uTide, uTide + 1.6, vH);
+          fl = mix(fl, fl * vec3(0.7, 0.76, 0.8), wet * 0.85);
+          paintCol = mix(paintCol, fl, tidal);
         }
         #ifdef DETAIL
-          paintCol = mix(paintCol, groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk), 0.45);
+          paintCol = mix(paintCol, groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk), 0.75);
         #endif
         diffuseColor.rgb *= paintCol;`);
   };
@@ -793,7 +901,7 @@ function addWaterAttrs(g, level, flow, rapid) {
 const WATER_VS = /* glsl */ `
   uniform float uLevel; uniform int uKind;
   attribute float level; attribute float flow; attribute float rapid; attribute float ground; attribute float top;
-  varying vec3 vWorld; varying float vLevel; varying float vFlow; varying float vRapid; varying float vWall;
+  varying vec3 vWorld; varying float vLevel; varying float vFlow; varying float vRapid; varying float vWall; varying float vAcross;
   #include <common>
   #include <fog_pars_vertex>
   #include <logdepthbuf_pars_vertex>
@@ -807,6 +915,7 @@ const WATER_VS = /* glsl */ `
     #else
       if (uKind == 0) { p.y = uLevel; lv = uLevel; }
       vWall = 0.0;
+      vAcross = top;
     #endif
     vec4 wp = modelMatrix * vec4(p, 1.0);
     vWorld = wp.xyz; vLevel = lv; vFlow = flow; vRapid = rapid;
@@ -819,9 +928,9 @@ const WATER_VS = /* glsl */ `
 const WATER_FS = /* glsl */ `
   uniform sampler2D uHeight; uniform sampler2D uSea; uniform vec4 uExt; uniform vec2 uHalf;
   uniform sampler2D uTownH; uniform sampler2D uTownSea; uniform vec4 uTownExt; uniform vec4 uTownRect;
-  uniform float uTime; uniform int uKind;
+  uniform float uTime; uniform int uKind; uniform float uLevel;
   uniform vec3 uShallow, uDeep, uFoam;
-  varying vec3 vWorld; varying float vLevel; varying float vFlow; varying float vRapid; varying float vWall;
+  varying vec3 vWorld; varying float vLevel; varying float vFlow; varying float vRapid; varying float vWall; varying float vAcross;
   #include <common>
   #include <fog_pars_fragment>
   #include <logdepthbuf_pars_fragment>
@@ -829,6 +938,16 @@ const WATER_FS = /* glsl */ `
   float vnoise(vec2 p) {
     vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
+  }
+  // the surface's slope: two sets of waves drifting different ways, finer ones close up
+  vec2 waves(vec2 p, float t, float near) {
+    vec2 g = vec2(0.0);
+    const vec2 e = vec2(0.35, 0.0);
+    vec2 a = p * 0.045 + vec2(t * 0.06, t * 0.035), b = p * 0.11 - vec2(t * 0.05, -t * 0.07), c = p * 0.42 + vec2(t * 0.21, t * 0.13);
+    g += vec2(vnoise(a + e.xy) - vnoise(a - e.xy), vnoise(a + e.yx) - vnoise(a - e.yx)) * 0.9;
+    g += vec2(vnoise(b + e.xy) - vnoise(b - e.xy), vnoise(b + e.yx) - vnoise(b - e.yx)) * 0.6;
+    g += vec2(vnoise(c + e.xy) - vnoise(c - e.xy), vnoise(c + e.yx) - vnoise(c - e.yx)) * 0.5 * near;
+    return g;
   }
   void main() {
     #include <logdepthbuf_fragment>
@@ -841,35 +960,66 @@ const WATER_FS = /* glsl */ `
       bool inTown = vWorld.x > uTownRect.x && vWorld.x < uTownRect.z && vWorld.z > uTownRect.y && vWorld.z < uTownRect.w;
       vec2 tuv = (vWorld.xz - uTownRect.xy) * uTownExt.xy + uTownExt.zw;
       float groundH = inTown ? texture2D(uTownH, tuv).r : texture2D(uHeight, uv).r;
+      float seaHere = inTown ? texture2D(uTownSea, tuv).r : texture2D(uSea, uv).r;
       float depth = vLevel - groundH;
       if (uKind != 2 && depth < -0.05) discard;
-      if (uKind == 0 && (inTown ? texture2D(uTownSea, tuv).r : texture2D(uSea, uv).r) < 0.5) discard; // lakes and low ground are not the sea
+      if (uKind == 0 && seaHere < 0.5) discard; // lakes and low ground are not the sea
+      if (uKind == 2 && seaHere > 0.5 && vLevel < uLevel + 0.03) discard; // the tide has covered this stretch
       float d = max(depth, 0.0);
-      vec3 col = mix(uShallow, uDeep, smoothstep(0.4, uKind == 0 ? 22.0 : 9.0, d));
+      if (uKind == 2) d = max(d, 1.5);
 
-      // cartoon glints: two drifting noise layers cut into thin light bands
-      vec2 q = vWorld.xz * 0.011;
-      float n = vnoise(q + vec2(uTime * 0.05, uTime * 0.035)) * 0.6 + vnoise(q * 2.6 - vec2(uTime * 0.06, -uTime * 0.045)) * 0.4;
-      float near = 1.0 - smoothstep(2500.0, 9000.0, vFogDepth); // glints only up close; far off they sparkle
-      col += (smoothstep(0.66, 0.68, n) - smoothstep(0.7, 0.73, n)) * 0.035 * near;
+      float dist = length(cameraPosition - vWorld);
+      float near = 1.0 - smoothstep(600.0, 4000.0, dist);
+      vec3 V = normalize(cameraPosition - vWorld);
+      vec2 flowDir = vec2(0.0);
+      float t = uTime;
+      vec2 g = waves(vWorld.xz, t, near) * (uKind == 0 ? 1.0 : uKind == 1 ? 0.6 : 0.8);
+      if (uKind == 2) g += vec2(vnoise(vec2(vFlow * 0.12 - t * 2.2, vWorld.x * 0.05)) - 0.5) * 0.6; // rivers ripple as they run
+      float far = smoothstep(1500.0, 12000.0, dist); // calmer far off, so the distance doesn't shimmer
+      vec3 N = normalize(vec3(-g.x * 0.2 * (1.0 - 0.6 * far), 1.0, -g.y * 0.2 * (1.0 - 0.6 * far)));
 
-      // a lacy foam edge where the water meets the shore
-      float edge = 1.0 - smoothstep(0.0, uKind == 0 ? 1.1 : 0.6, d);
-      float fn = vnoise(vWorld.xz * 0.06 + vec2(uTime * 0.25, -uTime * 0.2));
-      float foam = smoothstep(0.55, 0.95, edge) * smoothstep(0.35, 0.8, fn) * 0.32;
+      // body colour: clear and green-gold over the shallows, blue-teal in the deeps
+      float deepness = 1.0 - exp(-d / (uKind == 0 ? 7.0 : 3.5));
+      vec3 col = mix(uShallow, uDeep, deepness);
+      col = mix(col * vec3(1.08, 1.06, 0.92), col, smoothstep(0.0, 1.2, d)); // sand showing through at the edge
 
-      if (uKind == 2) { // rivers: streaks running downstream, whitewater on the steep parts
-        float s = fract(vFlow / 55.0 - uTime * 0.9 + vnoise(vWorld.xz * 0.04) * 0.7);
-        col += smoothstep(0.86, 0.98, s) * 0.12;
-        float white = vRapid * (0.65 + 0.6 * vnoise(vec2(vFlow * 0.08 - uTime * 4.0, vWorld.x * 0.08 + vWorld.z * 0.05)));
-        foam = max(foam, step(0.5, white));
-        col = mix(col, mix(uShallow, uFoam, 0.6), vRapid * 0.5);
+      // the sky in the water, strongest at a low angle
+      vec3 R = reflect(-V, N);
+      vec3 sky = mix(vec3(0.8, 0.88, 0.9), vec3(0.45, 0.66, 0.84), smoothstep(0.0, 0.6, R.y));
+      float fres = 0.03 + 0.4 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      col = mix(col, sky, fres);
+      // sun glints: soft sheen far off, crisp cartoon sparkles close up
+      vec3 L = normalize(vec3(-0.7, 1.1, -0.45));
+      float sp = max(dot(R, L), 0.0);
+      float speck = step(0.62, vnoise(vWorld.xz * 0.9 + vec2(t * 0.7, -t * 0.5))); // glints break up into sparkles, never broad sheets
+      col += vec3(1.0, 0.97, 0.88) * (pow(sp, 400.0) * 0.08 + smoothstep(0.994, 0.997, sp) * speck * 0.3 * near);
+
+      // the shore: a thin, broken line of foam right at the waterline, and a paler band just off it
+      float fn = vnoise(vWorld.xz * 0.09 + vec2(t * 0.3, -t * 0.22)) * 0.6 + vnoise(vWorld.xz * 0.35 - t * 0.4) * 0.4;
+      // a few pixels from the waterline, however flat the shore: over the flats a depth test alone
+      // would foam the whole sheet of barely covered mud
+      float px = depth / max(fwidth(depth), 1e-4);
+      float line = (1.0 - smoothstep(0.5, 3.0, px)) * (1.0 - smoothstep(0.1, 0.6, d));
+      float foam = smoothstep(0.45, 0.75, line * (0.45 + 0.75 * fn)) * (uKind == 2 ? 0.0 : 0.55);
+      col = mix(col, col * 1.06 + 0.015, (1.0 - smoothstep(0.2, 1.4, d)) * 0.4 * (uKind == 0 ? 1.0 : 0.0));
+
+      if (uKind == 2) { // rivers: streaks carried downstream, white water on the steep parts
+        float s = vnoise(vec2(vFlow / 9.0 - t * 1.6, vAcross * 3.0 + 5.0));
+        col += smoothstep(0.72, 0.9, s) * 0.08 * near;
+        // white water: streaks drawn out along the current, broken up and tumbling downstream
+        vec2 wq = vec2(vFlow * 0.07 - t * 1.9, vAcross * 4.0);
+        float streak = vnoise(wq) * 0.6 + vnoise(wq * vec2(2.3, 2.1) + 7.0) * 0.4;
+        float boil = vnoise(vec2(vFlow * 0.35 - t * 3.5, vAcross * 7.0 + t * 0.5));
+        float white = vRapid * (0.2 + 0.85 * streak + 0.25 * boil);
+        float spray = smoothstep(0.47, 0.57, white) * (0.85 + 0.15 * boil);
+        col = mix(col, uDeep * 0.92, vRapid * 0.6); // dark green water between the white
+        foam = max(foam, spray * 0.95);
       }
-      if (uKind == 2) foam = max(step(0.5, edge * (0.55 + 0.7 * fn)) * 0.35, foam * step(0.3, vRapid));
-      col = mix(col, uFoam, foam * 0.7);
-      float alpha = mix(0.5, 0.94, smoothstep(0.2, 6.0, d));
-      if (uKind == 2) alpha = max(alpha, 0.85);
-      gl_FragColor = vec4(col, max(alpha, foam * 0.9));
+      col = mix(col, uFoam, foam);
+      float alpha = mix(0.45, 0.93, smoothstep(0.15, 5.0, d));
+      alpha = max(alpha, fres * 0.9);
+      if (uKind == 2) alpha = max(alpha, 0.86);
+      gl_FragColor = vec4(col, max(alpha, foam * 0.95));
     #endif
     #include <colorspace_fragment>
     #include <fog_fragment>

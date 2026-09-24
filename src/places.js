@@ -67,12 +67,17 @@ export const PLACES = [
     source: `${MARTIN}, pp. 12–13 and Map 3 (No. 10); ${OHALLORAN}`,
   },
   {
-    name: 'Front (Burpee) quarries', kind: 'site', tier: 3, at: [45.1640, -66.8490], approx: true,
-    note: 'Saint George Red Granite Co. quarries on the west side of the Magaguadavic. Their first schooner-load of granite went to Peter Cormack’s shop in Saint John in July 1872. A quarry railway ran south to the company’s first shed.',
-    source: `${MARTIN}, p. 10 and Map 3 (Nos. 33–34)`,
+    name: 'Front (Burpee) quarries', kind: 'site', tier: 3, structure: 'tramQuarry', approx: true,
+    note: 'Saint George Red Granite Co. quarries on the cliff west of the Magaguadavic. Their first schooner-load of granite went to Peter Cormack’s shop in Saint John in July 1872. Visitors in 1873 admired the “sluiceway that scooted huge blocks of stone downslope on wooden sleds to the railcars and loading derrick.”',
+    source: `${MARTIN}, pp. 10, 13 and Map 3 (Nos. 33–34)`,
   },
   {
-    name: 'First Saint George Red Granite Co. shed', kind: 'site', tier: 3, at: [45.1592, -66.8428], approx: true,
+    name: 'The quarry tramway', kind: 'site', tier: 3, structure: 'tramPlatform', approx: true,
+    note: 'By September 1873 the Saint George Red Granite Co. had built a railway from its quarries down to its shed site on the Magaguadavic. Loaded cars rolled downhill; in 1873 a party of visitors rode them down to the mill, crowded together “like schoolboys.” The course of the line here is drawn by eye.',
+    source: `${MARTIN}, pp. 10 and 13 (Daily Telegraph, 1873)`,
+  },
+  {
+    name: 'First Saint George Red Granite Co. shed', kind: 'site', tier: 3, structure: 'tramShed', approx: true,
     note: 'A steam-powered finishing shed half a mile south of the quarries, on twenty acres of intervale by the river. It opened in February 1874 and burned in June 1874.',
     source: `${MARTIN}, p. 10 and Maps 2–3 (yellow X)`,
   },
@@ -110,6 +115,7 @@ export const PRESETS = [
 const bearingOf = (rot, turn = 0) => (((Math.atan2(Math.sin(rot), -Math.cos(rot)) * 180) / Math.PI) + turn + 360) % 360;
 export const WORK_STOPS = [
   { key:'g', name:'Inside the Gorge', blurb:'Rock walls, white water and the old pine', target:d=>({x:-55,z:-125}), dist:185, tilt:34, from:145 },
+  { key: 't', name: 'The quarry tramway', blurb: 'Sleds, the loading derrick and the railcars', target: (d) => { const { tramQuarry: q, tramPlatform: p } = d.meta.structures; return { x: p.x * 0.7 + q.x * 0.3, z: p.z * 0.7 + q.z * 0.3 }; }, dist: 125, tilt: 27, from: (d) => bearingOf(d.meta.structures.tramPlatform.rot, 32) },
   { key: 'q', name: 'The quarrymen', blurb: 'Drilling, splitting and the horse derrick', structure: 'quarry', dist: 58, tilt: 32, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
   { key: 'w', name: 'The stonecutters’ yard', blurb: 'Mallets, chisels and polishing', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 70, tilt: 38, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
   { key: 'e', name: 'Main Street', blurb: 'Everyday life in town', target: (d) => {

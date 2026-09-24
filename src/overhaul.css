@@ -8,8 +8,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .brand { display:flex; align-items:center; gap:12px; color:var(--ink); text-decoration:none; font-size:17px; font-weight:750; letter-spacing:.12em; }
 .brand-mark { display:grid; place-items:center; width:44px; height:44px; border:1px solid #49695c; border-radius:50%; font:20px Georgia; letter-spacing:-.04em; }
 .brand small { display:block; font-size:9px; letter-spacing:.27em; margin-top:5px; color:#68776a; }
-.era-control { margin-left:auto; display:flex; gap:10px; align-items:center; }
-.era-control label { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-soft); }
+.era-control { margin:0 0 0 auto; font-size:10px; text-transform:uppercase; letter-spacing:.14em; color:var(--ink-soft); }
+.era-control strong { font:15px Georgia, serif; letter-spacing:.02em; color:var(--granite-dark); margin-left:6px; text-transform:none; }
 select { padding:9px; border:1px solid #24483b26; border-radius:6px; color:var(--ink); background:var(--card); font-size:12px; }
 #btn-home { border:0; border-left:1px solid #24483b26; padding:8px 0 8px 24px; background:none; color:var(--ink); font-size:13px; cursor:pointer; }
 #view-title { position:fixed; left:calc(var(--panel-w) + 56px); top:110px; pointer-events:none; z-index:3; color:#183d36; text-shadow:0 1px 8px #f2f4de; }
@@ -43,13 +43,13 @@ body.collapsed #view-title { left:28px; top:157px; }
 .stops button.active { background:#294e45; border-color:#294e45; }
 .stops button.active .stop-blurb { color:#d6ded2; }
 .stops button:active { transform:translateY(1px); }
-.railway-card { padding:18px 16px; background:#264a40; color:#f5f0dd; border-radius:7px; margin:8px 0; }
-.railway-card .eyebrow { color:#d5c799; }
-#panel .railway-card h2 { font-size:23px; margin:8px 0; }
-.railway-card p:not(.eyebrow) { font-size:12px; line-height:1.55; color:#d8e0d2; margin:7px 0 14px; }
-.railway-card button { border:1px solid #b5c4ac80; border-radius:4px; background:#f0e8cb; color:#264a40; width:100%; padding:10px 12px; text-align:left; font-size:12px; font-weight:650; cursor:pointer; }
-.railway-card button span { float:right; }
-.railway-card small { display:block; margin-top:9px; font-size:10px; line-height:1.5; color:#bccbb7; }
+.tram-card { padding:18px 16px; background:#264a40; color:#f5f0dd; border-radius:7px; margin:8px 0; }
+.tram-card .eyebrow { color:#d5c799; }
+#panel .tram-card h2 { font-size:23px; margin:8px 0; }
+.tram-card p:not(.eyebrow) { font-size:12px; line-height:1.55; color:#d8e0d2; margin:7px 0 14px; }
+.tram-card button { border:1px solid #b5c4ac80; border-radius:4px; background:#f0e8cb; color:#264a40; width:100%; padding:10px 12px; text-align:left; font-size:12px; font-weight:650; cursor:pointer; }
+.tram-card button span { float:right; }
+.tram-card small { display:block; margin-top:9px; font-size:10px; line-height:1.5; color:#bccbb7; }
 footer { border-top:1px solid #21423b20; padding:12px; background:var(--paper); }
 footer button { border:0; background:transparent; font-size:11px; padding:7px; }
 .float-btn { top:104px; left:20px; border:1px solid #29493630; border-radius:6px; background:var(--paper); font-size:12px; font-weight:500; }
@@ -101,11 +101,11 @@ dialog { border:1px solid #29493630; border-radius:10px; }
 dialog::backdrop { background:#16382e80; backdrop-filter:blur(4px); }
 #loading { display:flex; flex-direction:column; gap:20px; justify-content:center; background:#e0e7dc; text-align:center; padding:30px; }
 #loading button { border:0; border-radius:6px; background:var(--ink); color:#fff; padding:12px 22px; cursor:pointer; }
-@media (max-width:1000px) and (min-width:701px) { #view-name { font-size:27px; } #view-description { max-width:260px; } .era-control label { display:none; } }
+@media (max-width:1000px) and (min-width:701px) { #view-name { font-size:27px; } #view-description { max-width:260px; } }
 @media (max-width:700px) {
   #masthead { height:104px; padding:13px 16px 10px; align-items:flex-start; gap:10px; flex-wrap:wrap; }
   .brand { font-size:13px; gap:8px; } .brand small { font-size:7px; margin-top:3px; } .brand-mark { width:33px; height:33px; font-size:16px; }
-  .era-control { position:absolute; left:16px; bottom:10px; margin:0; } .era-control label { display:none; } .era-control select { padding:6px 8px; font-size:11px; background:#e8ebdf; border:0; }
+  .era-control { position:absolute; left:16px; bottom:12px; margin:0; font-size:9px; } .era-control strong { font-size:13px; }
   #btn-home { margin-left:auto; padding:6px; border:0; font-size:12px; }
   #view-title, body.collapsed #view-title { left:16px; top:172px; max-width:calc(100vw - 92px); }
   #view-title .eyebrow { font-size:8px; } #view-name { font-size:25px; margin:6px 0; } #view-description { font-size:10px; max-width:220px; }
@@ -134,6 +134,6 @@ dialog::backdrop { background:#16382e80; backdrop-filter:blur(4px); }
 }
 @media (prefers-reduced-motion:reduce) { button { transition:none; } }
 
-#panel .railway-card { margin:4px 0; }
-#panel .railway-card h2 { margin-top:6px; }
+#panel .tram-card { margin:4px 0; }
+#panel .tram-card h2 { margin-top:6px; }
 .explore-intro p:last-child { font-size:18px; }

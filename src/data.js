@@ -24,13 +24,18 @@ export async function loadData(base = 'data/') {
   const inTown = (x, z) => x >= T.x0 && x <= T.x1 && z >= T.z0 && z <= T.z1;
   const gridOf = (x, z) => (inTown(x, z) ? town : main);
 
+  // The height of the drawn ground: the same two triangles per cell that world.js builds (the
+  // diagonal alternates cell by cell), so anything set on it sits exactly on the surface. A plain
+  // bilinear blend can miss the drawn ground by a metre on a steep 30 m cell.
   function bilinear(g, x, z) {
     const u = Math.min(Math.max((x - g.x0) / g.cell, 0), g.nx - 1.001);
     const v = Math.min(Math.max((z - g.z0) / g.cell, 0), g.nz - 1.001);
     const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * g.nx + i;
-    const top = g.h[k] + (g.h[k + 1] - g.h[k]) * a;
-    const bot = g.h[k + g.nx] + (g.h[k + g.nx + 1] - g.h[k + g.nx]) * a;
-    return top + (bot - top) * b;
+    const h00 = g.h[k], h10 = g.h[k + 1], h01 = g.h[k + g.nx], h11 = g.h[k + g.nx + 1];
+    if ((i + j) & 1) { // diagonal from (1,0) to (0,1)
+      return a + b < 1 ? h00 + (h10 - h00) * a + (h01 - h00) * b : h11 + (h01 - h11) * (1 - a) + (h10 - h11) * (1 - b);
+    }
+    return b > a ? h00 + (h11 - h01) * a + (h01 - h00) * b : h00 + (h10 - h00) * a + (h11 - h10) * b; // diagonal (0,0)-(1,1)
   }
   const waterCode = (x, z) => {
     const g = gridOf(x, z);

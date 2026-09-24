@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>St. George · The Granite Coast</title>
-  <meta name="description" content="Explore St. George, New Brunswick: an illustrated 3D landscape of granite, water and the railway." />
+  <meta name="description" content="Explore St. George, New Brunswick: an illustrated 3D landscape of the Granite Town years, 1874–76: quarries, tramway, river, falls and wharf." />
   <link rel="stylesheet" href="/src/style.css" />
   <link rel="stylesheet" href="/src/overhaul.css" />
 </head>
@@ -13,7 +13,7 @@
 
   <header id="masthead">
     <a class="brand" href="?nowelcome" aria-label="St. George home"><span class="brand-mark">SG</span><span>ST. GEORGE<small>THE GRANITE COAST</small></span></a>
-    <div class="era-control"><label for="era">Landscape era</label><select id="era"><option value="1874">1874 · Granite by water</option><option value="1880" selected>1880+ · The railway arrives</option></select></div>
+    <p class="era-control">Granite Town <strong>1874–76</strong></p>
     <button type="button" id="btn-home">↗ <span>Overview</span></button>
   </header>
   <div id="view-title"><span class="eyebrow">EXPLORE THE GRANITE COAST</span><h2 id="view-name">A town shaped by stone.</h2><p id="view-description">From the quarry ledges to the Bay of Fundy.</p></div>
@@ -51,7 +51,7 @@
         <div class="explore-intro"><p class="eyebrow">STONE · WATER · WORK</p><p>A living landscape of stone,<br>water and working people.</p></div>
         <label class="search-label" for="place-search">Find a place</label><input id="place-search" type="search" placeholder="Town, quarry, wharf…" autocomplete="off" />
         <p id="search-empty" class="tip" hidden>No matching places. Try “quarry” or “town”.</p>
-        <div class="railway-card"><p class="eyebrow">A NEW CONNECTION · 1880</p><h2>The railway arrives</h2><p>A steam locomotive, granite wagons and a station on the former Shore Line corridor.</p><button type="button" id="btn-railway">Visit the railway <span>↗</span></button><small>Station and train are illustrative. Corridor follows saved map data.</small></div>
+        <div class="tram-card"><p class="eyebrow">BUILT 1873 · SAINT GEORGE RED GRANITE CO.</p><h2>The quarry tramway</h2><p>Blocks slide down a timber chute on sleds to the loading derrick, then roll downhill in railcars to the company’s first finishing shed by the Magaguadavic. A horse hauls the empty cars back up.</p><button type="button" id="btn-tramway">Visit the tramway <span>↗</span></button><small>The line’s exact course, the cars and the horse are illustrations; Martin (2013) records the railway, the slide, the railcars and the derrick.</small></div>
         <h2>Life along the river <span class="hint">close up</span></h2>
         <div id="work-stops" class="stops"></div>
 
@@ -61,7 +61,7 @@
       </section>
 
       <section id="pane-view" role="tabpanel" aria-labelledby="tab-view" hidden>
-        <h2>Make the map your own</h2><p class="tip">Use the era selector above to show the 1880 railway layer.</p>
+        <h2>Make the map your own</h2>
         <label class="check"><input type="checkbox" id="opt-labels" checked /> Place names</label>
         <label class="check"><input type="checkbox" id="opt-route" /> Granite route (preview)</label>
         <div id="route-key" class="key" hidden>
@@ -179,7 +179,7 @@
           <tr><th><kbd>Space</kbd></th><td>Play or pause the journey</td></tr>
           <tr><th><kbd>←</kbd> <kbd>→</kbd></th><td>Previous or next step (while the journey is on)</td></tr>
           <tr><th><kbd>1</kbd>–<kbd>9</kbd></th><td>Fly to the wide views</td></tr>
-          <tr><th><kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></th><td>Close-ups of people at work</td></tr>
+          <tr><th><kbd>G</kbd> <kbd>T</kbd> <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></th><td>Close-ups: the Gorge, the tramway, people at work</td></tr>
           <tr><th><kbd>Esc</kbd></th><td>Stop the journey</td></tr>
         </table>
       </div>
@@ -194,7 +194,7 @@
 
   <dialog id="about">
     <h2>About this stage</h2>
-    <p>An illustrated historical landscape of St. George in the Granite Town years, with an optional 1880 railway layer, made as a stage for short animations about the granite trade: quarry, canal, river, sheds, wharf and ship.</p>
+    <p>An illustrated historical landscape of St. George in the Granite Town years (1874–76), made as a stage for short animations about the granite trade: quarry, canal, river, sheds, wharf and ship.</p>
     <h3>How it was made</h3>
     <ul>
       <li>Shorelines, lakes, rivers and marshes come from OpenStreetMap. Hills come from the AWS Terrain Tiles elevation model. Both are modern and have been simplified.</li>
@@ -203,7 +203,7 @@
       <li>The red granite belt and its ledges follow Gwen Martin’s Maps 2 and 3.</li>
       <li>The town, farms and villages are drawn with simple 1870s-style houses, barns and stores. They show how the place was laid out, not particular buildings. Streets are the old core streets named on Martin’s Map 4, following today’s lines.</li>
       <li>The Bay of Fundy Red Granite Co. mill, its dam and flume, the upper and lower bridges and the main wharf are placed from Martin’s Map 4. Their shapes are imagined.</li>
-      <li>The optional railway layer represents the Grand Southern after its arrival in 1880. The shown corridor follows saved OpenStreetMap former railway geometry; the station and train are illustrative. A separate quarry tramway existed by 1873 but is not modeled.</li>
+      <li>The Saint George Red Granite Co. quarry tramway (1873) runs from the Front (Burpee) quarries down to the company’s first finishing shed (Martin, p. 10, p. 13 and Map 3). Its course is drawn by eye; the shed opened in February 1874 and burned in June 1874. There is no mainline railway: the Grand Southern reached St. George only in 1880.</li>
     </ul>
     <h3>Known differences from 1874</h3>
     <ul>

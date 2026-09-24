@@ -6,7 +6,7 @@ import { buildWorld } from './world.js';
 import { PRESETS, WORK_STOPS, SOURCES, buildLabels, locate } from './places.js';
 import { buildJourney } from './journey.js';
 import { buildLife } from './life.js';
-import { buildRailway } from './railway.js';
+import { tramwayLayout, buildTramway } from './tramway.js';
 
 const params = new URLSearchParams(location.search);
 const quality = params.get('q') || 'medium';
@@ -67,9 +67,9 @@ frame();
 
 // ------------------------------------------------------------------ load and build
 
-let data, railSource;
+let data;
 try {
-  [data, railSource] = await Promise.all([loadData(), fetch('data/railway.json').then(r => { if (!r.ok) throw new Error('Railway data unavailable'); return r.json(); })]);
+  data = await loadData();
 } catch (error) {
   $('loading').replaceChildren();
   const message = document.createElement('p'); message.textContent = 'The landscape could not load. Please check your connection and try again.';
@@ -77,21 +77,14 @@ try {
   $('loading').append(message, retry); $('w-status').textContent = message.textContent;
   console.error(error); throw error;
 }
-data.railway = railSource;
+// the quarry tramway is laid out first, so the trees along its line are never planted
+const tramLayout = tramwayLayout(data);
+data.clearings = tramLayout.clearings;
+Object.assign(data.meta.structures, { tramQuarry: tramLayout.quarry, tramPlatform: tramLayout.platform, tramShed: tramLayout.shed });
 const world = buildWorld(data, { scene, quality, exag: +$('opt-exag').value });
 const labels = buildLabels(data, scene, showPlace);
 const life = buildLife({ scene, data, world, camera });
-const railway = buildRailway(data, world, railSource, scene);
-let era = params.get('era') === '1874' || params.has('journey') ? '1874' : '1880';
-let savedEra = null;
-function setEra(value) {
-  era = value; $('era').value = value; railway.setVisible(value === '1880');
-  document.body.dataset.era = value;
-  if (value === '1874' && $('view-name').textContent === 'The railway arrives') { // the railway just vanished from under the title
-    $('view-name').textContent = 'Before the railway'; $('view-description').textContent = '1874 · granite moves by water';
-  }
-}
-setEra(era);
+const tramway = buildTramway({ data, world, scene, life, layout: tramLayout });
 labels.place(world.exag);
 $('loading').hidden = true;
 $('w-status').textContent = '';
@@ -183,22 +176,16 @@ for (const p of PRESETS) stopButton(p, $('presets'));
 $('place-search').addEventListener('input', e => {
   const query = e.target.value.trim().toLocaleLowerCase(); let matches = 0;
   document.querySelectorAll('.stops button').forEach(b => { b.hidden = !b.textContent.toLocaleLowerCase().includes(query); if (!b.hidden) matches++; });
-  const railCard = document.querySelector('.railway-card'); railCard.hidden = !railCard.textContent.toLocaleLowerCase().includes(query);
-  if (!railCard.hidden) matches++;
+  const tramCard = document.querySelector('.tram-card'); tramCard.hidden = !tramCard.textContent.toLocaleLowerCase().includes(query);
+  if (!tramCard.hidden) matches++;
   $('search-empty').hidden = matches > 0;
 });
 $('btn-home').addEventListener('click', () => { journey.stop(); $('place-card').hidden = true; flyTo('1'); });
-$('btn-railway').addEventListener('click', () => {
-  journey.stop(); setEra('1880'); railway.restart();
-  const p = railway.location, target = new THREE.Vector3(p.x, groundY(p.x,p.z) + 2, p.z);
-  flyTo({ target, pos: target.clone().add(new THREE.Vector3(-46, 32, 58)), name: 'The railway arrives', blurb: '1880 onward · Shore Line corridor · station location approximate' });
-  if (innerWidth <= 700) setCollapsed(true);
-});
-$('era').addEventListener('change', e => { journey.stop(); setEra(e.target.value); });
+$('btn-tramway').addEventListener('click', () => { journey.stop(); tramway.restart(); flyTo('t'); if (innerWidth <= 700) setCollapsed(true); });
 $('quality').value = params.get('q') || 'auto';
 $('quality').addEventListener('change', e => {
   const url = new URL(location.href); if (e.target.value === 'auto') url.searchParams.delete('q'); else url.searchParams.set('q', e.target.value);
-  url.searchParams.set('nowelcome', ''); url.searchParams.set('era', era); location.href = url.href;
+  url.searchParams.set('nowelcome', ''); location.href = url.href;
 });
 
 function setCollapsed(on) {
@@ -236,7 +223,7 @@ function setExag(e) {
   labels.place(e);
   journey.refresh();
   life.refresh();
-  railway.refresh();
+  tramway.refresh();
   controls.target.y *= k;
   camera.position.y = Math.max(camera.position.y, controls.target.y + 50);
   $('exag-val').textContent = `${e}× real`;
@@ -303,6 +290,7 @@ const bars = journey.steps.map((s, k) => {
   return seg.firstChild;
 });
 let showCaptions = true;
+let journeyShown = false;
 function journeyUI() {
   const { step, playing, t } = journey.state;
   const finished = step === journey.steps.length - 1 && t >= 1;
@@ -316,8 +304,8 @@ function journeyUI() {
   [...stepList.children].forEach((li, k) => { li.classList.toggle('current', k === step); li.classList.toggle('done', step >= 0 && k < step); });
   bars.forEach((b, k) => { b.style.width = k < step ? '100%' : k > step ? '0%' : `${t * 100}%`; });
   document.body.classList.toggle('journey-on', step >= 0);
-  if (step >= 0 && savedEra === null) { savedEra = era; setEra('1874'); if (innerWidth <= 700) setCollapsed(true); }
-  if (step < 0 && savedEra !== null) { const previous = savedEra; savedEra = null; setEra(previous); }
+  if (step >= 0 && !journeyShown && innerWidth <= 700) setCollapsed(true);
+  journeyShown = step >= 0;
   const chapter = chapters.findLastIndex(c => c.start <= step);
   [...$('chapters').children].forEach((b,i) => b.setAttribute('aria-current', i === chapter ? 'step' : 'false'));
   if (step >= 0) { $('view-name').textContent = 'The Stone’s Journey'; $('view-description').textContent = 'Summer 1874 · ' + (chapters[chapter]?.name || ''); }
@@ -387,7 +375,7 @@ window.stage = {
   /** the Stone's Journey: play(), pause(), go(step), stop(), steps, state */
   get journey() { return journey; },
   /** the people, horses, derrick, dory and gulls: crowd.list, herd.list, person(role, f), horse(h) */
-  life, railway,
+  life, tramway,
   route: data.meta.route, anchors: data.meta.anchors,
   /** run fn(dt, elapsed) every frame; returns an unsubscribe function */
   onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -493,7 +481,7 @@ renderer.setAnimationLoop((now) => {
   talkUI();
   if (fadeEl.style.opacity !== String(journey.state.fade)) fadeEl.style.opacity = journey.state.fade;
   life.update(dt);
-  railway.update(reducedMotion ? 0 : dt);
+  tramway.update(reducedMotion ? 0 : dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 

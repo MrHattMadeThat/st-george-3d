@@ -456,7 +456,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       talk: [
         [0.08, 'The young hand', 'Why not haul the block to the mill by road?'],
         [0.36, 'The old hand', 'Over those hills? The roads are rough, and a block this heavy would wear out a team. On the water, it floats.'],
-        [0.68, 'The old hand', 'And there’s no railway here yet. The line won’t reach St. George until 1880.'],
+        [0.68, 'The old hand', 'The only rails here are the Red Granite Company’s tramway, down from their quarry to their shed. The main line won’t reach St. George until 1880.'],
       ],
       update(t) {
         running.fall1 = false; idleFall(fall1, shears1.apex);
