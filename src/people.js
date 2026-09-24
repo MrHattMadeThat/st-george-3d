@@ -392,7 +392,7 @@ export class Crowd {
   }
 }
 // people are drawn a little larger than life so they read from a distance, like the trees
-export const CARTOON = 1.35;
+export const CARTOON = 1.22;
 
 // ------------------------------------------------------------------ horses
 

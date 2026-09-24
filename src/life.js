@@ -228,7 +228,7 @@ export function buildLife({ scene, data, world, camera }) {
     const placeBankers = () => {
       const Mx = new THREE.Matrix4(), Qy = new THREE.Quaternion();
       spots.forEach(([bx, bz], k) => {
-        Mx.compose(new THREE.Vector3(bx, groundY(bx, bz), bz), Qy.setFromAxisAngle(new THREE.Vector3(0, 1, 0), m.rot), new THREE.Vector3(1.35, 1.35, 1.35));
+        Mx.compose(new THREE.Vector3(bx, groundY(bx, bz), bz), Qy.setFromAxisAngle(new THREE.Vector3(0, 1, 0), m.rot), new THREE.Vector3(CARTOON, CARTOON, CARTOON));
         bankers.setMatrixAt(k, Mx); stones.setMatrixAt(k, Mx);
       });
       bankers.instanceMatrix.needsUpdate = stones.instanceMatrix.needsUpdate = true;
@@ -237,7 +237,7 @@ export function buildLife({ scene, data, world, camera }) {
     life.userData.placeBankers = placeBankers;
     spots.forEach(([bx, bz, side]) => {
       // the banker's long side runs across the yard (along p); the cutter stands at that side
-      const cx = bx - ax * side * 1.35, cz = bz - az * side * 1.35;
+      const cx = bx - ax * side * CARTOON, cz = bz - az * side * CARTOON;
       person('stonecutter', { x: cx, z: cz, heading: Math.atan2(ax * side, az * side), action: 'chisel', tool: 'mallet', tool2: 'chisel' });
     });
     // men carrying stone between the mill door and the yard, a polisher at a slab
@@ -344,7 +344,7 @@ export function buildLife({ scene, data, world, camera }) {
     posts.name = 'washing lines'; wash.name = 'washing';
     life.add(posts, wash);
     life.userData.placeLines = () => {
-      const Mx = new THREE.Matrix4(), Qy = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(1.35, 1.35, 1.35);
+      const Mx = new THREE.Matrix4(), Qy = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(CARTOON, CARTOON, CARTOON);
       lines.forEach(([lx, lz, rot], k) => {
         Mx.compose(new THREE.Vector3(lx, groundY(lx, lz), lz), Qy.setFromAxisAngle(Y, rot), S1);
         posts.setMatrixAt(k, Mx); wash.setMatrixAt(k, Mx); wash.setColorAt(k, new THREE.Color(cloths[k % cloths.length]));
