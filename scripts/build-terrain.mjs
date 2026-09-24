@@ -611,6 +611,18 @@ function graniteBelt(x, z) { // >0 north of the edge
   return -1;
 }
 
+// The Bay of Fundy Co. quarry floor (Map 3, No. 10): bare rock in front of the cut face.
+// Its orientation matches structures.quarry, which is worked out from the slope in the same way.
+const QUARRY_FLOOR = (() => {
+  const x = toX(-66.8255), z = toZ(45.1640);
+  return { x, z };
+})();
+function quarryFloor(x, z, rot) {
+  const dx = x - QUARRY_FLOOR.x, dz = z - QUARRY_FLOOR.z;
+  const lx = dx * Math.cos(rot) - dz * Math.sin(rot), lz = dx * Math.sin(rot) + dz * Math.cos(rot);
+  return Math.abs(lx) < 27 && lz > -6 && lz < 20 ? 1 - smooth(14, 20, lz) * 0.5 : 0;
+}
+
 // Bare ledges: scattered through the belt, and thickest along its southern edge between the
 // Magaguadavic and Lake Utopia, where the quarries opened ("immense ledges" - O'Halloran 1968).
 const QUARRY_ROW = [toX(-66.845), toX(-66.806)];
@@ -645,6 +657,11 @@ function fieldAt(x, z) { // cleared land split into lots; returns a field kind o
   return { kind: Math.floor(hash2(i + 1000, j + 1000, 11) * PAL.fields.length), open: hash2(i + 1000, j + 1000, 5), edge, cx, cz };
 }
 
+// the quarry faces downhill, like structures.quarry below
+const QUARRY_ROT = (() => {
+  const { x, z } = QUARRY_FLOOR;
+  return Math.atan2(-(heightAt(x + 30, z) - heightAt(x - 30, z)), -(heightAt(x, z + 30) - heightAt(x, z - 30)));
+})();
 const paint = new PNG({ width: PW, height: PH });
 // masks.png: R = open farmland, G = bare rock, B = marsh. The ground shader draws lots, cracks
 // and reeds from these so they stay sharp up close.
@@ -675,6 +692,8 @@ for (let j = 0; j < PH; j++) for (let i = 0; i < PW; i++) {
     const rocky = smooth(0.24, 0.42, sl) + ledges(x, z, g, sl);
     if (rocky > 0) col = lerpC(col, g > 0 ? lerpC(PAL.granite, PAL.granite2, n2) : PAL.rock, clamp(rocky, 0, 1) * (g > 0 ? 1 : 0.8));
     rock = clamp(rocky, 0, 1);
+    const qf = quarryFloor(x, z, QUARRY_ROT);
+    if (qf > 0) { col = lerpC(col, lerpC(PAL.granite, PAL.granite2, n2 * 0.6), qf); rock = Math.max(rock, qf); farm = 0; }
     const r = nearestRiver(x, z);
     if (r && r.d < 12) col = lerpC(col, PAL.bank, 0.7);
     if (dw < 14) col = lerpC(col, PAL.bank, 0.6);
@@ -1128,6 +1147,7 @@ const meta = {
   town: { x0: TOWN.x0, z0: TOWN.z0, x1: TOWN.x1, z1: TOWN.z1, w: TOWN.w, h: TOWN.h, cell: TOWN_CELL, pw: TOWN.pw, ph: TOWN.ph, paintCell: TOWN_PAINT },
   gorge: gorge.filter((_, k) => k % 2 === 0 || k === gorge.length - 1).map(([x, z, t]) => [round(x), round(z), round(gorgeSurf(t), 2)]),
   structures: JSON.parse(JSON.stringify(structures, (k, v) => (typeof v === 'number' ? round(v, 3) : v))),
+  streets: streets.map((s) => ({ name: s.name, half: s.half, bridge: s.bridge, pts: s.pts.map(([x, z]) => [round(x), round(z)]) })),
   buildings,
 };
 fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify(meta));

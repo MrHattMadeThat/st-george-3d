@@ -37,6 +37,30 @@ the internet at run time).
 Keys: **1–9** fly to the camera stops, **H** toggles clean view, **Space** plays or pauses the
 journey, **Esc** stops it and hands the camera back.
 
+## People at work
+
+About 450 people and 30 horses, all posed in code ([src/people.js](src/people.js)) and placed by
+[src/life.js](src/life.js):
+
+- **The quarry**: three double-jack drilling crews (one man kneels and turns the drill, two strike
+  it in turn, and chips fly), two men working a block loose with bars, a foreman, a water boy, and
+  a horse derrick whose horse walks the capstan round only while a block is being raised or lowered.
+- **The canal landing**: men carrying stone down to the scows.
+- **The mill yard**: stonecutters with mallet and chisel at their bankers, a polisher, men carrying stone.
+- **The town**: people walking the old streets alone and in pairs, stopping to talk, groups outside
+  the stores and churches, children playing in the yards, people on their doorsteps, men splitting
+  wood, women hanging out washing, chimney smoke, and horse-drawn wagons.
+- **The water**: stevedores carrying sacks on the main wharf, a boy fishing off the end, a dory
+  rowing about the Basin, sailors on the schooner, gulls.
+- **Out of town**: farmers hoeing, horses grazing, people about the villages, a team waiting at the Red Store.
+- **The journey**: the scow's polers pole only while it moves; the wagon has a walking team and a driver.
+
+Each body part is one instanced mesh for the whole crowd, so everyone costs a few dozen draw calls;
+figures farther than 2 km from the camera are skipped. **Q W E R** fly to close-up stops for
+watching the work. From the console, `stage.life.person(role, { x, z, heading, action, tool })`
+adds a figure; roles are `quarryman`, `stonecutter`, `townsman`, `gentleman`, `woman`, `boy`,
+`girl`, `farmer`, `sailor`, and actions are listed in `ACTIONS` in `src/people.js`.
+
 ## The Stone's Journey
 
 Nine captioned steps that follow one block of red granite in the summer of 1874, the way the
@@ -84,6 +108,7 @@ flyTo('4'); // or flyTo('The quarry ledges')
 | `setExag(k)`, `setTrees(f)` | hill height multiplier, share of trees shown (0–1) |
 | `onFrame(fn)` | `fn(dt, elapsed)` every frame; returns an unsubscribe function |
 | `journey` | `play()`, `pause()`, `go(step)`, `stop()`, `steps`, `state` |
+| `life` | the people and horses: `person(role, f)`, `horse(h)`, `rideOn(object, x, y, z)`, `crowd.list`, `herd.list` |
 | `world.props` | makers for props: `block()`, `column()`, `scow()`, `schooner()`, `wagon()`, `person(colour)` |
 | `data.meta.structures` | where the mill, dam, flume, bridges, wharves, Red Store, old pine and quarry are |
 | `route.cart` | `[x, z]` points: the mill yard → through town → the main wharf |

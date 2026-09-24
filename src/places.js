@@ -105,6 +105,19 @@ export const PRESETS = [
   { key: '9', name: 'Letete Passage', anchor: 'letetePassage', dist: 4500, from: 20, tilt: 34 },
 ];
 
+// Close-up stops for watching people at work. `target` and `from` can read the map data.
+const bearingOf = (rot, turn = 0) => (((Math.atan2(Math.sin(rot), -Math.cos(rot)) * 180) / Math.PI) + turn + 360) % 360;
+export const WORK_STOPS = [
+  { key: 'q', name: 'The quarrymen', structure: 'quarry', dist: 38, tilt: 24, from: (d) => bearingOf(d.meta.structures.quarry.rot, 25) },
+  { key: 'w', name: 'The stonecutters’ yard', target: (d) => ({ x: d.meta.route.cart[0][0], z: d.meta.route.cart[0][1] }), dist: 36, tilt: 26, from: (d) => bearingOf(d.meta.structures.mill.rot, 120) },
+  { key: 'e', name: 'Main Street', target: (d) => {
+    const c = d.toLocal(45.1288, -66.8255), s = d.meta.streets.find((q) => q.name === 'Main Street');
+    const p = s ? s.pts.reduce((b, q) => (Math.hypot(q[0] - c.x, q[1] - c.z) < Math.hypot(b[0] - c.x, b[1] - c.z) ? q : b)) : [c.x, c.z];
+    return { x: p[0], z: p[1] };
+  }, dist: 70, tilt: 22, from: 200 },
+  { key: 'r', name: 'The wharf and the Basin', target: (d) => { const w = d.meta.structures.wharf; return { x: w.x + Math.sin(w.rot) * 45, z: w.z + Math.cos(w.rot) * 45 }; }, dist: 55, tilt: 24, from: (d) => bearingOf(d.meta.structures.wharf.rot, 95) },
+];
+
 export const SOURCES = [MARTIN, OHALLORAN, GREARSON];
 
 // Where a place or preset sits, in local metres.

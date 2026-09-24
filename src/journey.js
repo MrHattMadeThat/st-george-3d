@@ -24,7 +24,7 @@ const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const span = (t, a, b) => clamp01((t - a) / (b - a)); // 0..1 over the part of a step from a to b
 
-export function buildJourney({ scene, camera, controls, data, world, setTide }) {
+export function buildJourney({ scene, camera, controls, data, world, life, setTide }) {
   const { meta } = data;
   const S = meta.structures, R = meta.route;
   const exag = () => world.exag;
@@ -39,6 +39,23 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
   group.name = 'journey';
   group.add(block, column, scow, wagon, schooner, sled);
   scene.add(group);
+
+  // the people who work the props: polers on the scow, a team and driver, hands on the schooner
+  if (life) {
+    for (const [lx, lz] of [[-1.9, -5.4], [1.9, 5.2]]) {
+      const ride = life.rideOn(scow, lx, 1.4, lz);
+      life.person('quarryman', { move: (f) => {
+        ride(f);
+        const want = f.moving ? 'pole' : 'idle';
+        if (f.action !== want) { f.action = want; life.crowd.setTool(f, f.moving ? 'pole' : null); }
+      }, y: life.rideY });
+    }
+    for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(wagon, sx, 0, 5.4), y: life.rideY, walking: (h) => h.moving });
+    life.person('townsman', { action: 'drive', tool: 'reins', move: life.rideOn(wagon, 0, 1.3, 1.9), y: life.rideY });
+    life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 1.4, 2.4, -9.5), y: life.rideY });
+    life.person('sailor', { action: 'haul', move: life.rideOn(schooner, -1.3, 2.4, 3.2, Math.PI / 2), y: life.rideY });
+    life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 0.9, 2.4, 10, Math.PI), y: life.rideY });
+  }
 
   // ---- the paths
   const quarry = [S.quarry.x, S.quarry.z];
@@ -87,7 +104,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         block.visible = true; sled.visible = true;
         put(block, x, groundAt(qx, qz) + Math.sin(Math.PI * u) * 14 * (t > 0.25 ? 1 : 0) + 0.5, z, rot + u * 0.8);
         put(sled, front[0], groundAt(front[0], front[1]) + 0.2, front[1], rot);
-        return { target: [qx, qz], dist: 150, from: rot + 0.6, tilt: 0.45 };
+        return { target: [qx, qz], dist: 58, from: rot + 0.6, tilt: 0.32 };
       },
     },
     {
@@ -100,7 +117,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         const heading = Math.atan2(landing[0] - a[0], landing[1] - a[1]);
         put(sled, x, groundAt(x, z) + 0.3, z, heading);
         put(block, x, groundAt(x, z) + 0.7, z, heading);
-        return { target: [x, z], dist: 260, from: heading + 2.3, tilt: 0.55 };
+        return { target: [x, z], dist: 85, from: heading + 2.3, tilt: 0.4 };
       },
     },
     {
@@ -111,7 +128,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         const s = scowPath.at(0.28 * ease(t));
         put(scow, s.x, waterAt(s.x, s.z), s.z, s.heading);
         onScow(block, 0);
-        return { target: [s.x, s.z], dist: 170, from: s.heading + 2.6, tilt: 0.42 };
+        return { target: [s.x, s.z], dist: 50, from: s.heading + 2.4, tilt: 0.3 };
       },
     },
     {
@@ -121,7 +138,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         const s = scowPath.at(0.28 + 0.72 * ease(t));
         put(scow, s.x, waterAt(s.x, s.z), s.z, s.heading);
         onScow(block, 0);
-        return { target: [s.x, s.z], dist: 260 + 160 * Math.sin(Math.PI * t), from: s.heading + 2.9, tilt: 0.5 };
+        return { target: [s.x, s.z], dist: 70 + 330 * Math.sin(Math.PI * t), from: s.heading + 2.8, tilt: 0.35 + 0.2 * Math.sin(Math.PI * t) };
       },
     },
     {
@@ -139,7 +156,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         column.visible = t > 0.5;
         put(column, y.x - Math.sin(y.heading) * 8, groundAt(y.x, y.z) + 1.2, y.z - Math.cos(y.heading) * 8, y.heading + Math.PI / 2);
         column.rotation.x = t * 30;
-        return { target: [m.x, m.z], dist: 260, from: m.rot + 2.2, tilt: 0.55 };
+        return { target: [m.x, m.z], dist: 110, from: m.rot + 2.2, tilt: 0.4 };
       },
     },
     {
@@ -150,8 +167,8 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         put(wagon, c.x, groundAt(c.x, c.z), c.z, c.heading);
         column.rotation.x = 0;
         column.visible = true;
-        put(column, c.x, groundAt(c.x, c.z) + 2.1, c.z, c.heading + Math.PI / 2);
-        return { target: [c.x, c.z], dist: 120, from: c.heading + 2.5, tilt: 0.5 };
+        put(column, c.x, groundAt(c.x, c.z) + 1.4, c.z, c.heading + Math.PI / 2);
+        return { target: [c.x, c.z], dist: 42, from: c.heading + 2.4, tilt: 0.33 };
       },
     },
     {
@@ -159,12 +176,12 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
       text: 'The column is swung aboard a schooner. That summer the company’s first orders included seven polished columns for a cathedral in Boston.',
       update(t) {
         const c = cartPath.at(1), d = deckOf(), u = ease(t);
-        const from = new THREE.Vector3(c.x, groundAt(c.x, c.z) + 2.1, c.z);
+        const from = new THREE.Vector3(c.x, groundAt(c.x, c.z) + 1.4, c.z);
         const p = from.clone().lerp(d, u);
         p.y += Math.sin(Math.PI * u) * 12;
         column.position.copy(p);
         column.rotation.y = schooner.rotation.y + Math.PI / 2;
-        return { target: [berth[0], berth[1]], dist: 170, from: W.rot + 2.1, tilt: 0.5 };
+        return { target: [berth[0], berth[1]], dist: 70, from: W.rot + 2.1, tilt: 0.35 };
       },
     },
     {
@@ -175,7 +192,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         const s = seaPath.at(redU * 1.25 * ease(t));
         put(schooner, s.x, world.tide * exag(), s.z, s.heading);
         column.position.copy(deckOf()); column.rotation.y = s.heading + Math.PI / 2;
-        return { target: [s.x, s.z], dist: 420, from: s.heading + 2.4, tilt: 0.45 };
+        return { target: [s.x, s.z], dist: 150, from: s.heading + 2.4, tilt: 0.33 };
       },
     },
     {
@@ -185,7 +202,7 @@ export function buildJourney({ scene, camera, controls, data, world, setTide }) 
         const s = seaPath.at(redU * 1.25 + (1 - redU * 1.25) * ease(t));
         put(schooner, s.x, world.tide * exag(), s.z, s.heading);
         column.position.copy(deckOf()); column.rotation.y = s.heading + Math.PI / 2;
-        return { target: [s.x, s.z], dist: 700 + 5200 * ease(span(t, 0.2, 1)), from: s.heading + 2.6, tilt: 0.5 + 0.35 * span(t, 0.2, 1) };
+        return { target: [s.x, s.z], dist: 200 + 5700 * ease(span(t, 0.2, 1)), from: s.heading + 2.6, tilt: 0.35 + 0.5 * span(t, 0.2, 1) };
       },
     },
   ];

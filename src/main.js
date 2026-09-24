@@ -3,8 +3,9 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { loadData } from './data.js';
 import { buildWorld } from './world.js';
-import { PRESETS, SOURCES, buildLabels, locate } from './places.js';
+import { PRESETS, WORK_STOPS, SOURCES, buildLabels, locate } from './places.js';
 import { buildJourney } from './journey.js';
+import { buildLife } from './life.js';
 
 const params = new URLSearchParams(location.search);
 const quality = params.get('q') || 'medium';
@@ -39,7 +40,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.screenSpacePanning = false;
 controls.maxPolarAngle = 1.42;
-controls.minDistance = 60;
+controls.minDistance = 6; // close enough to watch the people at work
 controls.maxDistance = 48000;
 controls.zoomToCursor = true;
 
@@ -62,6 +63,7 @@ frame();
 const data = await loadData();
 const world = buildWorld(data, { scene, quality, exag: +$('opt-exag').value });
 const labels = buildLabels(data, scene, showPlace);
+const life = buildLife({ scene, data, world, camera });
 labels.place(world.exag);
 $('loading').hidden = true;
 
@@ -75,18 +77,18 @@ const groundY = (x, z) => {
 
 let flight = null;
 function viewFor(p) {
-  const { x, z } = locate(data, p);
+  const { x, z } = p.target ? p.target(data) : locate(data, p);
   const target = new THREE.Vector3(x, groundY(x, z), z);
-  const bearing = THREE.MathUtils.degToRad(p.from), tilt = THREE.MathUtils.degToRad(p.tilt);
+  const bearing = THREE.MathUtils.degToRad(typeof p.from === 'function' ? p.from(data) : p.from), tilt = THREE.MathUtils.degToRad(p.tilt);
   const flat = Math.cos(tilt) * p.dist;
   const pos = target.clone().add(new THREE.Vector3(Math.sin(bearing) * flat, Math.sin(tilt) * p.dist, -Math.cos(bearing) * flat));
   return { target, pos };
 }
 function flyTo(p, seconds = 2.4) {
-  const to = typeof p === 'string' ? PRESETS.find((q) => q.name === p || q.key === p) : p;
+  const to = typeof p === 'string' ? [...PRESETS, ...WORK_STOPS].find((q) => q.name === p || q.key === p) : p;
   if (!to) return;
   const end = to.pos && to.target ? to : viewFor(to);
-  document.querySelectorAll('.presets button').forEach((b) => b.classList.toggle('active', b.dataset.key === to.key));
+  document.querySelectorAll('.presets button').forEach((b) => b.classList.toggle('active', b.dataset.key === to.key && to.key != null));
   if (reducedMotion || seconds <= 0) {
     camera.position.copy(end.pos); controls.target.copy(end.target); flight = null; return;
   }
@@ -112,6 +114,14 @@ controls.addEventListener('start', () => {
 // ------------------------------------------------------------------ panel
 
 const presetBox = $('presets');
+for (const p of WORK_STOPS) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.key = p.key;
+  b.innerHTML = `<kbd>${p.key.toUpperCase()}</kbd><span>${p.name}</span>`;
+  b.addEventListener('click', () => { journey.stop(); flyTo(p); });
+  $('work-stops').appendChild(b);
+}
 for (const p of PRESETS) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -146,6 +156,7 @@ function setExag(e) {
   world.setExag(e);
   labels.place(e);
   journey.refresh();
+  life.refresh();
   controls.target.y *= k;
   camera.position.y = Math.max(camera.position.y, controls.target.y + 50);
   $('exag-val').textContent = `${e}× real`;
@@ -177,7 +188,7 @@ $('sources').innerHTML = SOURCES.map((s) => `<li>${s}</li>`).join('') +
 
 // ------------------------------------------------------------------ the Stone's Journey
 
-const journey = buildJourney({ scene, camera, controls, data, world, setTide });
+const journey = buildJourney({ scene, camera, controls, data, world, life, setTide });
 const stepList = $('j-steps');
 journey.steps.forEach((s, k) => {
   const li = document.createElement('li');
@@ -213,7 +224,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'h' || e.key === 'H') toggleClean();
   if (e.key === ' ') { e.preventDefault(); $('j-play').click(); }
   if (e.key === 'Escape') journey.stop();
-  const p = PRESETS.find((q) => q.key === e.key);
+  const p = [...PRESETS, ...WORK_STOPS].find((q) => q.key === e.key.toLowerCase());
   if (p) { journey.stop(); flyTo(p); }
 });
 
@@ -228,6 +239,8 @@ window.stage = {
   flyTo, setTide, setExag, setTrees,
   /** the Stone's Journey: play(), pause(), go(step), stop(), steps, state */
   get journey() { return journey; },
+  /** the people, horses, derrick, dory and gulls: crowd.list, herd.list, person(role, f), horse(h) */
+  life,
   route: data.meta.route, anchors: data.meta.anchors,
   /** run fn(dt, elapsed) every frame; returns an unsubscribe function */
   onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -267,12 +280,13 @@ renderer.setAnimationLoop((now) => {
   stepFlight(dt);
   controls.update();
   // keep the camera out of the hills
-  const floor = groundY(camera.position.x, camera.position.z) + 25;
+  const floor = groundY(camera.position.x, camera.position.z) + 3;
   if (camera.position.y < floor) camera.position.y = floor;
 
   if ($('opt-tide-run').checked) { tideClock += dt * ((2 * Math.PI) / 60); setTide(+(Math.sin(tideClock) * 3.5).toFixed(2)); }
   world.update(dt);
   if (!flight) journey.frame(dt);
+  life.update(dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 

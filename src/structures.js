@@ -59,6 +59,48 @@ function windows(w, d, rows, color = '#34414d', door = true) {
   return merge(parts);
 }
 
+// Red granite with joints and a speckle of feldspar and quartz, as a small canvas texture.
+// Surfaces using it get world-scaled UVs (see worldUV), so the joints line up across faces.
+let graniteTex = null;
+function granite() {
+  if (graniteTex) return graniteTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#b3503c'; g.fillRect(0, 0, 256, 256);
+  let s = 7;
+  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 2600; k++) { // grains
+    g.fillStyle = ['#c86a52', '#9e4436', '#d9b8a8', '#7a3428', '#c0604a'][Math.floor(r() * 5)];
+    g.fillRect(r() * 256, r() * 256, 1 + r() * 2.5, 1 + r() * 2.5);
+  }
+  g.strokeStyle = 'rgba(60, 25, 18, 0.75)'; g.lineWidth = 2.5;
+  const beds = [0, 96, 170, 256];
+  for (const y of beds.slice(0, 3)) { g.beginPath(); g.moveTo(0, y + 2); g.bezierCurveTo(90, y + r() * 10 - 5, 170, y + r() * 10 - 5, 256, y + 2); g.stroke(); } // bedding joints
+  for (let row = 0; row < 3; row++) for (let k = 0; k < 2; k++) { // vertical joints, staggered
+    const y0 = beds[row], y1 = beds[row + 1], x = (k * 128 + row * 57 + r() * 40) % 256;
+    g.beginPath(); g.moveTo(x, y0); g.lineTo(x + (r() - 0.5) * 12, y1); g.stroke();
+  }
+  graniteTex = new THREE.CanvasTexture(c);
+  graniteTex.wrapS = graniteTex.wrapT = THREE.RepeatWrapping;
+  graniteTex.colorSpace = THREE.SRGBColorSpace;
+  graniteTex.anisotropy = 8;
+  return graniteTex;
+}
+/** UVs from world-ish position by each face's main axis, `size` metres per repeat */
+function worldUV(geo, size) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const p = g.attributes.position, n = g.attributes.normal, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    const [u, v] = ay >= ax && ay >= az ? [p.getX(i), p.getZ(i)] : ax >= az ? [p.getZ(i), p.getY(i)] : [p.getX(i), p.getY(i)];
+    uv[i * 2] = u / size; uv[i * 2 + 1] = v / size;
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (g.attributes.color) g.deleteAttribute('color');
+  return g;
+}
+
 // ------------------------------------------------------------------ building kinds
 
 // Each kind: walls (painted per building), roof (per building), trim (windows, doors, foundation).
@@ -269,16 +311,21 @@ export function buildStructures(data, { exag, groundY, toon }) {
     const { x, z, rot } = S.quarry;
     const red = ['#b3503c', '#a8483a', '#c0604a', '#9e4436'];
     const parts = [];
-    // three benches, each stepped back into the hill (local -z is uphill)
-    for (let b = 0; b < 3; b++) parts.push(box(40 - b * 6, 5, 10, 0, b * 5 - 1, -8 - b * 9, red[b]));
-    for (const s of [-1, 1]) parts.push(box(6, 16, 34, s * 23, -1, -18, red[3]));
+    // three benches, each stepped back into the hill (local -z is uphill), in jointed red granite
+    const rock = [];
+    // each bench reaches well down into the slope so none of them floats on the downhill side
+    for (let b = 0; b < 3; b++) rock.push(new THREE.BoxGeometry(40 - b * 6, 5 + 6 + b * 5, 10).translate(0, b * 5 + 4 - (11 + b * 5) / 2, -8 - b * 9));
+    for (const s of [-1, 1]) rock.push(new THREE.BoxGeometry(6, 22, 34).translate(s * 23, 4, -18));
+    // (the quarry floor is painted into the ground as bare rock by the build)
+    for (let k = 0; k < 7; k++) rock.push(new THREE.BoxGeometry(2.6, 1.6, 1.8).translate(-12 + k * 3.8, -0.2 + 0.8, 4 + (k % 3) * 2.5)); // blocks split out, waiting
+    const face = new THREE.Mesh(worldUV(mergeGeometries(rock.map((g) => g.toNonIndexed())), 12), new THREE.MeshToonMaterial({ map: granite(), gradientMap: toon }));
+    face.name = 'quarry face';
+    face.position.set(x, h(x, z) - 1.5, z);
+    face.rotation.y = rot;
+    group.add(face);
     // cut blocks on the floor, a spoil heap of grey rubble
-    for (let k = 0; k < 7; k++) parts.push(box(2.6, 1.6, 1.8, -12 + k * 3.8, -0.2, 4 + (k % 3) * 2.5, red[k % 4]));
     for (let k = 0; k < 6; k++) parts.push(tint(new THREE.IcosahedronGeometry(2.5 + (k % 3), 0).translate(24 + (k % 3) * 3, 0.5, 6 + k * 2.5), '#8f8a82'));
-    // horse derrick: mast, boom and stays
-    parts.push(cyl(0.35, 0.45, 20, 6, -1, 2, '#6b4a2e', 6));
-    parts.push(cyl(0.25, 0.3, 16, 0, 0, 0, '#6b4a2e', 6).rotateZ(-1.25).translate(6, 4, 2));
-    parts.push(cyl(0.08, 0.08, 26, 0, 0, 0, '#3b2a1c', 4).rotateX(0.85).translate(6, 0, -10));
+    // (the horse derrick is animated: see src/life.js)
     // quarrymen's shanty
     parts.push(box(5, 3, 4, -26, 0, 14, '#7a5a3c'), gableRoof(5, 4, 3, 1.6, '#4d4a48').translate(-26, 0, 14));
     add(merge(parts), x, h(x, z) - 1.5, z, rot, 'quarry');
@@ -302,15 +349,13 @@ export function makeProps(toon) {
   // granite: a rough block, and the polished column made from it
   const block = () => mesh(box(3.2, 1.8, 2.2, 0, 0, 0, '#b3503c'), 'granite block');
   const column = () => {
-    const g = merge([tint(new THREE.CylinderGeometry(0.6, 0.6, 7, 14).rotateZ(Math.PI / 2).translate(0, 0.62, 0), '#c85a4c'),
-      tint(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 14).rotateZ(Math.PI / 2).translate(3.4, 0.62, 0), '#b04c40'),
-      tint(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 14).rotateZ(Math.PI / 2).translate(-3.4, 0.62, 0), '#b04c40')]);
+    const g = merge([tint(new THREE.CylinderGeometry(0.42, 0.42, 4.6, 14).rotateZ(Math.PI / 2).translate(0, 0.45, 0), '#c85a4c'),
+      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(2.2, 0.45, 0), '#b04c40'),
+      tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(-2.2, 0.45, 0), '#b04c40')]);
     return mesh(g, 'polished column');
   };
   // a flat-bottomed scow, poled by two men (local +z is forward)
-  const scow = () => mesh(merge([box(6, 1.1, 16, 0, 0, 0, '#6b4a2e'), box(6.3, 0.35, 16.3, 0, 1.05, 0, '#4a3326'),
-    person('#7a3b2e', -2.2, -6.2, 1.1), person('#2f4a6b', 2.2, 6.2, 1.1),
-    cyl(0.07, 0.07, 7, -2.6, 0, -6.4, '#3b2a1c', 4).rotateX(0.5).translate(0, 1.5, 0), cyl(0.07, 0.07, 7, 2.6, 0, 6, '#3b2a1c', 4).rotateX(-0.5).translate(0, 1.5, 0)]), 'scow');
+  const scow = () => mesh(merge([box(6, 1.1, 16, 0, 0, 0, '#6b4a2e'), box(6.3, 0.35, 16.3, 0, 1.05, 0, '#4a3326')]), 'scow');
 
   // a two-masted coasting schooner (local +z is forward)
   const schooner = () => {
@@ -327,8 +372,7 @@ export function makeProps(toon) {
     const jib = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 4, 14.5, 0, 4, 5.8, 0, 20, 5.8], 3)); g.computeVertexNormals(); return tint(g, '#f3ecd8'); })();
     const g = merge([tint(hullGeo, '#23302b'), tint(stripe, '#e8dfc8'), box(6, 0.3, 25, 0, 2.1, 1.5, '#9a7a55'),
       cyl(0.25, 0.32, 22, 0, 2, 5.5, '#6b4a2e', 6), cyl(0.25, 0.32, 24, 0, 2, -4.5, '#6b4a2e', 6), cyl(0.12, 0.18, 9, 0, 0, 0, '#6b4a2e', 5).rotateX(1.35).translate(0, 5.4, 15.5),
-      sail(9, 16, 0.1, 4, 5.3), sail(11, 18, 0.1, 4, -4.7), jib, box(2.4, 1.6, 3.6, 0, 2.3, -8.5, '#7a5a3c'),
-      person('#2f4a6b', 1.4, -10, 2.3)]);
+      sail(9, 16, 0.1, 4, 5.3), sail(11, 18, 0.1, 4, -4.7), jib, box(2.4, 1.6, 3.6, 0, 2.3, -8.5, '#7a5a3c')]);
     // the sails need both faces
     const m = mesh(g, 'schooner');
     m.material = mat.clone(); m.material.side = THREE.DoubleSide;
@@ -338,9 +382,9 @@ export function makeProps(toon) {
   const wagon = () => {
     const horse = (x) => merge([box(1, 1.4, 2.6, x, 1.2, 0, '#6b4a2e'), box(0.6, 1.2, 1, x, 2, 1.5, '#6b4a2e').rotateX(0), cyl(0.12, 0.12, 1.2, x - 0.3, 0, -1, '#3b2a1c', 4), cyl(0.12, 0.12, 1.2, x + 0.3, 0, -1, '#3b2a1c', 4), cyl(0.12, 0.12, 1.2, x - 0.3, 0, 1, '#3b2a1c', 4), cyl(0.12, 0.12, 1.2, x + 0.3, 0, 1, '#3b2a1c', 4)]);
     const wheel = (x, z) => tint(new THREE.CylinderGeometry(0.8, 0.8, 0.25, 12).rotateZ(Math.PI / 2).translate(x, 0.8, z), '#5b3a26');
-    return mesh(merge([horse(-0.8).translate(0, 0, 5.5), horse(0.8).translate(0, 0, 5.5), box(2.4, 0.5, 5, 0, 1.1, 0, '#8a6a48'),
-      wheel(-1.3, -1.6), wheel(1.3, -1.6), wheel(-1.3, 1.6), wheel(1.3, 1.6), cyl(0.06, 0.06, 3.5, 0, 1.3, 3.3, '#3b2a1c', 4).rotateX(Math.PI / 2).translate(0, 1.3, 0.2),
-      person('#5b3a26', 0.6, 2.2, 1.6)]), 'wagon');
+    // the team and the driver are animated figures (src/life.js), riding along with this mesh
+    return mesh(merge([box(2.4, 0.5, 5, 0, 1.1, 0, '#8a6a48'), box(0.1, 0.5, 5, 1.15, 1.55, 0, '#6b4a2e'), box(0.1, 0.5, 5, -1.15, 1.55, 0, '#6b4a2e'),
+      wheel(-1.3, -1.6), wheel(1.3, -1.6), wheel(-1.3, 1.6), wheel(1.3, 1.6), box(0.12, 0.12, 3.4, 0, 1.0, 4.1, '#3b2a1c'), box(1.6, 0.3, 0.6, 0, 1.6, 1.9, '#6b4a2e')]), 'wagon');
   };
   return { block, column, scow, schooner, wagon, person: (c) => mesh(person(c), 'person') };
 }
