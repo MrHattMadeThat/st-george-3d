@@ -96,7 +96,7 @@ footer button { border:0; background:transparent; font-size:11px; padding:7px; }
 body.clean #masthead, body.clean #view-title { display:none; }
 body.clean #btn-exit-clean { display:block; opacity:.25; }
 body.clean #btn-exit-clean:hover, body.clean #btn-exit-clean:focus-visible { opacity:1; }
-body.journey-on #view-title { opacity:.8; }
+body.journey-on #view-title { display:none; } /* the story card already names the journey and its step */
 dialog { border:1px solid #29493630; border-radius:10px; }
 dialog::backdrop { background:#16382e80; backdrop-filter:blur(4px); }
 #loading { display:flex; flex-direction:column; gap:20px; justify-content:center; background:#e0e7dc; text-align:center; padding:30px; }

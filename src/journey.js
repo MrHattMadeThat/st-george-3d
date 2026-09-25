@@ -772,9 +772,20 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     }
     if (guide > 0 && state.playing && settling <= 0) guide -= dt;
     const dist = view.dist * user.ratio, from = view.from + user.turn;
-    const tilt = THREE.MathUtils.clamp(view.tilt + user.tilt, 0.05, 1.42);
-    const flat = Math.cos(tilt) * dist;
-    want.pos.set(want.target.x + Math.sin(from) * flat, want.target.y + Math.sin(tilt) * dist, want.target.z + Math.cos(from) * flat);
+    let tilt = THREE.MathUtils.clamp(view.tilt + user.tilt, 0.05, 1.42);
+    // look down from higher up rather than through a hill: raise the shot until the line of sight clears the ground
+    for (let tries = 0; ; tries++) {
+      const flat = Math.cos(tilt) * dist;
+      want.pos.set(want.target.x + Math.sin(from) * flat, want.target.y + Math.sin(tilt) * dist, want.target.z + Math.cos(from) * flat);
+      if (tries >= 16 || tilt >= 1.3 || !Number.isFinite(dist)) break;
+      let clear = true;
+      for (let q = 0; q < 0.85 && clear; q += 0.1) {
+        const x = lerp(want.pos.x, want.target.x, q), z = lerp(want.pos.z, want.target.z, q);
+        clear = lerp(want.pos.y, want.target.y, q) > groundAt(x, z) + (q === 0 ? 3 : 1.5);
+      }
+      if (clear) break;
+      tilt = Math.min(1.3, tilt + 0.05);
+    }
     // the camera rides along with what it follows (a fast scow would leave an easing camera behind)
     const carry = !snap && state.playing && settling <= 0 && wantWas.lengthSq() > 0 ? V3.subVectors(want.target, wantWas) : null;
     wantWas.copy(want.target);

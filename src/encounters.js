@@ -152,7 +152,7 @@ export function buildEncounters(ctx) {
     speakers['The farm boy'] = headOf(boy);
     const beat = {
       name: 'A cow in the canal', s, slow: 7, hold: 6,
-      look: [inWater.x, inWater.z],
+      look: [b.x + b.nx * 2, b.z + b.nz * 2], // the bank she wades out to, where the boy stands: frames scow, cow and boy
       talk: [
         [0, 'The young hand', 'There’s a cow in the canal.', 2.4],
         [2.5, 'The old hand', 'It’s July. She’s cooling off. Can’t say I blame her.', 3.4],
