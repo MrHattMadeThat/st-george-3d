@@ -4,6 +4,7 @@
 // weir); some are just funny (a dog steals a lunch pail, a goat eats a hat, a gull steals a fish).
 // Farm animals graze at the farms along Riverview Avenue, and a peddler's cart works the road.
 import * as THREE from 'three';
+import { graniteMaterial } from './structures.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { trinket } from './critters.js';
 import { CARTOON } from './people.js';
@@ -69,7 +70,8 @@ export function buildScenes({ scene, data, world, life, critters, journey }) {
       const pail = trinket('pail', toon); group.add(pail);
       const dog = critters.add('dog', { color: '#c9a36b' });
       const [bx, bz] = q(-22, 9.5); // the block the pail sits on
-      const block = mesh(new THREE.BoxGeometry(1.4, 0.6, 1.0).translate(0, 0.3, 0), '#b3503c');
+      const block = mesh(new THREE.BoxGeometry(1.4, 0.6, 1.0).translate(0, 0.3, 0), '#ffffff');
+        block.material = graniteMaterial(world.toon);
       const man = person('quarryman', { action: 'sit', x: bx - 1.2, z: bz, hat: 'straw' });
       const boy = person('boy', { action: 'idle', hat: 'cap' });
       const home = q(-34, 22), lair = q(-10, 26);
@@ -99,7 +101,8 @@ export function buildScenes({ scene, data, world, life, critters, journey }) {
       const mx = lerp(j.S0[0], j.LB[0], 0.35), mz = lerp(j.S0[1], j.LB[1], 0.35);
       const ux = j.LB[0] - j.S0[0], uz = j.LB[1] - j.S0[1], l = Math.hypot(ux, uz);
       const bx = mx + (uz / l) * 9, bz = mz - (ux / l) * 9;
-      const rock = mesh(new THREE.BoxGeometry(3.4, 1.6, 2.2).translate(0, 0.8, 0), '#b3503c');
+      const rock = mesh(new THREE.BoxGeometry(3.4, 1.6, 2.2).translate(0, 0.8, 0), '#ffffff');
+        rock.material = graniteMaterial(world.toon);
       loops.push(() => { rock.position.set(bx, gy(bx, bz) - 0.2, bz); });
       for (const s of [-1, 1]) {
         const f = person('quarryman', { x: bx + s * 1.1, z: bz + 1.6, action: 'strike', tool: 'sledge', phase: s > 0 ? 0 : 0.65, y: () => gy(bx, bz) });
@@ -132,7 +135,8 @@ export function buildScenes({ scene, data, world, life, critters, journey }) {
     const m = S.mill, ax = Math.sin(m.rot), az = Math.cos(m.rot), px = az, pz = -ax;
     const at = (a, c) => [yard[0] + ax * a + px * c, yard[1] + az * a + pz * c];
     const [bx, bz] = at(14, 16);
-    const seat = mesh(new THREE.BoxGeometry(1.6, 0.5, 0.9).translate(0, 0.25, 0), '#b3503c');
+    const seat = mesh(new THREE.BoxGeometry(1.6, 0.5, 0.9).translate(0, 0.25, 0), '#ffffff');
+    seat.material = graniteMaterial(world.toon);
     const man = person('stonecutter', { x: bx, z: bz, action: 'sit', hat: null });
     const hat = trinket('hat', toon); group.add(hat);
     const goat = critters.add('goat', { color: '#e8e2d4' });

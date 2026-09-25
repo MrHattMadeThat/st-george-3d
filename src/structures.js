@@ -5,6 +5,7 @@
 // ground - dams, bridges, wharves, flumes - are built for the current hill height and rebuilt
 // when it changes.
 import * as THREE from 'three';
+import { quarryLanding } from './landings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ------------------------------------------------------------------ geometry helpers
@@ -103,6 +104,7 @@ function granite() {
   graniteTex.anisotropy = 8;
   return graniteTex;
 }
+export const graniteMaterial = (toon) => new THREE.MeshToonMaterial({ map: granite(), gradientMap: toon });
 /** UVs from world-ish position by each face's main axis, `size` metres per repeat */
 function worldUV(geo, size) {
   const g = geo.index ? geo.toNonIndexed() : geo;
@@ -370,6 +372,21 @@ export function buildStructures(data, { exag, groundY, toon }) {
       const bot = Math.min(data.heightAt(wx, wz) * exag, deck - 3);
       parts.push(box(6, deck - bot, 2.4, 0, bot - deck, pz, '#6b4a2e'));
     }
+    // Approach planks follow the ground beyond each bridge end, closing both road gaps.
+    for (const sign of [-1, 1]) {
+      const run = 24, samples = 12;
+      let prev = new THREE.Vector3(0, 0.6, sign * L / 2);
+      for (let i = 1; i <= samples; i++) {
+        const d = run * i / samples, localZ = sign * (L / 2 + d);
+        const ground = h(cx + Math.sin(rot) * localZ, cz + Math.cos(rot) * localZ) - deck + 0.15;
+        const y = THREE.MathUtils.lerp(0.6, ground, Math.min(1, d / 16));
+        const next = new THREE.Vector3(0, y, localZ), delta = next.clone().sub(prev);
+        const g = new THREE.BoxGeometry(7, 0.3, delta.length());
+        g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), delta.clone().normalize()));
+        g.translate(0, (y + prev.y) / 2 - 0.15, (localZ + prev.z) / 2);
+        parts.push(tint(g, '#8a6a48')); prev = next;
+      }
+    }
     add(merge(parts), cx, deck, cz, rot, key);
   }
 
@@ -384,10 +401,26 @@ export function buildStructures(data, { exag, groundY, toon }) {
       parts.push(box(1.2,0.9+(i%3)*0.25,1.2,side*(W/2-1.5),0.62,8+i*5,'#9a7f58'));
       parts.push(box(1.24,0.08,1.24,side*(W/2-1.5),1.1,8+i*5,'#605b47'));
     }
-    for (let k = 0; k * 6 <= L; k++) {
-      const pz = Math.min(k * 6, L), wx = x + Math.sin(rot) * pz, wz = z + Math.cos(rot) * pz;
-      const bot = Math.max(Math.min(data.heightAt(wx, wz), -2), -8) * exag; // cribs down to about the low-tide bottom
-      parts.push(box(W - 0.6, deck - bot, 1.2, 0, bot - deck, pz, k % 2 ? '#6b4a2e' : '#5b3a26'));
+    // Interlocking horizontal log courses around stone-filled cribs.
+    const log = (length, x, y, z, across) => {
+      const g = new THREE.CylinderGeometry(0.28, 0.3, length, 8);
+      g.rotateX(Math.PI / 2);
+      if (across) g.rotateY(Math.PI / 2);
+      g.translate(x, y, z);
+      return tint(g, '#6b4a2e');
+    };
+    for (let k = 0; k < L; k += 6) {
+      const len = Math.min(6, L - k), pz = k + len / 2;
+      const wx = x + Math.sin(rot) * pz, wz = z + Math.cos(rot) * pz;
+      const bot = Math.max(Math.min(data.heightAt(wx, wz), -2), -8) * exag;
+      parts.push(box(W - 1.3, deck - bot - 0.2, len - 1, 0, bot - deck, pz, '#777469'));
+      for (let y = -0.3, course = 0; y > bot - deck; y -= 0.5, course++) {
+        if (course % 2) {
+          for (const end of [-1, 1]) parts.push(log(W, 0, y, pz + end * (len / 2 - 0.3), true));
+        } else {
+          for (const side of [-1, 1]) parts.push(log(len + 0.3, side * (W / 2 - 0.3), y, pz, false));
+        }
+      }
     }
     for (let k = 0; k < 4; k++) parts.push(box(0.6, 1, 0.6, (k % 2 ? 1 : -1) * (W / 2 - 0.6), 0.6, L * (0.35 + 0.2 * k), '#3b2a1c')); // bollards
     add(merge(parts), x, deck, z, rot, name);
@@ -475,9 +508,10 @@ export function buildStructures(data, { exag, groundY, toon }) {
     parts.push(box(5, 3, 4, -26, 0, 14, '#7a5a3c'), gableRoof(5, 4, 3, 1.6, '#4d4a48').translate(-26, 0, 14));
     add(merge(parts), x, h(x, z) - 1.5, z, rot, 'quarry');
     if (S.quarry.landing) {
-      const [lx, lz] = S.quarry.landing;
-      const dir = Math.atan2(x - lx, z - lz);
-      add(merge([box(8, 0.5, 14, 0, 0, 0, '#9a7a55'), box(7.4, 3, 1, 0, -3, 6.5, '#5b3a26')]), lx, h(lx, lz) + 0.8, lz, dir, 'canal landing');
+      const { bank: [lx, lz], ux, uz, level } = quarryLanding(data);
+      // A short bank-side platform, parallel to the berth and clear of the departing scow.
+      const deck = Math.max(h(lx, lz), level * exag + 0.8);
+      add(merge([box(6, 0.5, 12, 0, 0, 0, '#9a7a55')]), lx, deck, lz, Math.atan2(uz, -ux), 'canal landing');
     }
   }
   return group;
@@ -759,12 +793,13 @@ export function makeProps(toon) {
     cyl(0.4, 0.4, 0.14, x, y + 1.85, z, '#3b2a1c', 8), cyl(0.22, 0.26, 0.3, x, y + 1.95, z, '#3b2a1c', 8)]);
 
   // granite: a rough block, and the polished column made from it (its origin is on its own axis, so it spins true)
-  const block = () => mesh(box(3.2, 1.8, 2.2, 0, 0, 0, '#b3503c'), 'granite block');
+  const stoneMesh = (g, name) => { const m = new THREE.Mesh(worldUV(g, 4), graniteMaterial(toon)); m.name = name; return m; };
+  const block = () => stoneMesh(new THREE.BoxGeometry(3.2, 1.8, 2.2).translate(0, 0.9, 0), 'granite block');
   const column = () => {
     const g = merge([tint(new THREE.CylinderGeometry(0.42, 0.42, 4.6, 14).rotateZ(Math.PI / 2), '#c85a4c'),
       tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(2.2, 0, 0), '#b04c40'),
       tint(new THREE.CylinderGeometry(0.52, 0.52, 0.35, 14).rotateZ(Math.PI / 2).translate(-2.2, 0, 0), '#b04c40')]);
-    return mesh(g, 'polished column');
+    return stoneMesh(g, 'polished column');
   };
   // a flat-bottomed scow, poled by two men (local +z is forward)
   const scow = () => mesh(merge([box(6, 1.1, 16, 0, 0, 0, '#6b4a2e'), box(6.3, 0.35, 16.3, 0, 1.05, 0, '#4a3326')]), 'scow');

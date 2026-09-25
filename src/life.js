@@ -3,6 +3,8 @@
 // (meta.structures, meta.streets, meta.buildings, meta.route) so it follows the map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { quarryLanding } from './landings.js';
+import { graniteMaterial } from './structures.js';
 import { Crowd, Herd, Chips, CARTOON } from './people.js';
 
 // ------------------------------------------------------------------ what people wore
@@ -144,7 +146,7 @@ export function buildLife({ scene, data, world, camera }) {
     const boom = wood(0.45, 0.45, 15); boom.position.set(0, 4.2, 7); boom.rotation.x = -0.58; boomPivot.add(boom);
     const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 4), new THREE.MeshToonMaterial({ color: '#3b2a1c', gradientMap: world.toon }));
     boomPivot.add(rope);
-    const load = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.5, 1.9), new THREE.MeshToonMaterial({ color: '#b3503c', gradientMap: world.toon }));
+    const load = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.5, 1.9), graniteMaterial(world.toon));
     boomPivot.add(load);
     for (const s of [-1, 1]) { const guy = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 30, 3), rope.material); guy.position.set(s * 8, 10, -9); guy.rotation.set(0.6, 0, s * 0.45); g.add(guy); }
     life.add(g);
@@ -197,7 +199,7 @@ export function buildLife({ scene, data, world, camera }) {
 
   // ------------------------------------------------------------------ the canal landing: loaders
   if (S.quarry?.landing) {
-    const [lx, lz] = S.quarry.landing;
+    const { bank: [lx, lz] } = quarryLanding(data);
     const [qx, qz] = [S.quarry.x, S.quarry.z];
     const d = Math.hypot(qx - lx, qz - lz), ux = (qx - lx) / d, uz = (qz - lz) / d;
     for (let k = 0; k < 2; k++) {
@@ -217,7 +219,7 @@ export function buildLife({ scene, data, world, camera }) {
     ]);
     const stone = new THREE.BoxGeometry(1.3, 0.5, 0.65).translate(0, 1.0, 0);
     const bankers = new THREE.InstancedMesh(banker, new THREE.MeshToonMaterial({ color: '#8f8a82', gradientMap: world.toon }), 8);
-    const stones = new THREE.InstancedMesh(stone, new THREE.MeshToonMaterial({ color: '#b8584a', gradientMap: world.toon }), 8);
+    const stones = new THREE.InstancedMesh(stone, graniteMaterial(world.toon), 8);
     bankers.name = 'bankers'; stones.name = 'banker stones';
     const spots = [];
     for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {

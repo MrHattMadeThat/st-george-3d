@@ -10,6 +10,7 @@
 // When the journey isn't playing, its props and crews wait at their places as part of the scene.
 import * as THREE from 'three';
 import { buildEncounters } from './encounters.js';
+import { quarryLanding } from './landings.js';
 import { CARTOON } from './people.js';
 
 const MARTIN = 'Martin (2013), The Granite Industry of Southwestern New Brunswick';
@@ -19,6 +20,7 @@ const OHALLORAN = "O'Halloran (1968), History of the Granite Industry in St. Geo
 class Path {
   constructor(pts) {
     this.curve = new THREE.CatmullRomCurve3(pts.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+    this.curve.arcLengthDivisions = Math.max(1000, pts.length * 32);
     this.length = this.curve.getLength();
   }
   at(u) {
@@ -167,32 +169,33 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
 
   // The canal landing: walk from the canal toward the quarry until the ground rises out of the water.
   const L = S.quarry.landing;
-  const canalLevel = (() => { const w = data.inlandWaterAt(L[0], L[1]); return Number.isNaN(w) ? 11.7 : w; })();
-  const [lqx, lqz] = unit(L[0], L[1], Q.x, Q.z);
-  let bank1 = L;
-  for (let d = 0; d < 120; d += 1) { const x = L[0] + lqx * d, z = L[1] + lqz * d; if (hAt(x, z) > canalLevel + 0.4) { bank1 = [x, z]; break; } }
-  const LB = [bank1[0] + lqx * 3, bank1[1] + lqz * 3];       // shear legs and the sled's stop, on the bank
-  const berth1 = [bank1[0] - lqx * 6, bank1[1] - lqz * 6];   // the scow, alongside
+  const { bank: LB, berth: berth1, ux: lqx, uz: lqz, level: canalLevel } = quarryLanding(data);
   const SL = [LB[0] + lqx * 6, LB[1] + lqz * 6];             // where the sled stops, its team still on the bank
 
   // The mill landing: the bank of the millpond nearest the mill's west door, clear of the Gorge.
   const M = S.mill, max = Math.sin(M.rot), maz = Math.cos(M.rot);
   const westDoor = [M.x - max * 44, M.z - maz * 44], eastDoor = [M.x + max * 44, M.z + maz * 44];
   const lvl = S.dam?.level ?? 8.7;
-  const routeEnd = R.scow[R.scow.length - 1];
+  // Stop on the east bank upstream of the upper bridge, before the dam.
+  const routeEnd = R.scow.slice().reverse().find((p) => p[1] < -290);
   const gorgeDist = (x, z) => Math.min(...meta.gorge.map(([gx, gz]) => Math.hypot(gx - x, gz - z)));
-  let MB = null, berth2 = routeEnd;
+  let MB = null, berth2 = routeEnd, landingTangent = [0, 1];
   {
     let best = Infinity;
     for (let dx = -70; dx <= 70; dx += 2) for (let dz = -70; dz <= 70; dz += 2) {
-      const x = westDoor[0] + dx, z = westDoor[1] + dz;
+      const x = westDoor[0] + dx, z = -300 + dz;
+      if (z > -275) continue;
       const h = hAt(x, z);
-      if (h < lvl + 0.6 || h > lvl + 6 || gorgeDist(x, z) < 18) continue;
       const [ux, uz] = unit(x, z, routeEnd[0], routeEnd[1]);
-      const wx = x + ux * 10, wz = z + uz * 10;
-      if (hAt(wx, wz) > lvl - 0.8 || gorgeDist(wx, wz) < 22) continue;
-      const score = Math.hypot(dx, dz);
-      if (score < best) { best = score; MB = [x, z]; berth2 = [x + ux * 11, z + uz * 11]; }
+      const wx = x + ux * 12, wz = z + uz * 12;
+      const water = data.inlandWaterAt(wx, wz);
+      if (!Number.isFinite(water) || h < water + 0.6 || h > water + 12 || hAt(wx, wz) > water - 1) continue;
+      // Check the full hull footprint, not only its centre, against the sloping bank.
+      const tx = uz, tz = -ux;
+      if ([-3.2, 3.2].some((side) => [-8.3, 8.3].some((end) =>
+        hAt(wx + ux * side + tx * end, wz + uz * side + tz * end) > water - 0.35))) continue;
+      const score = Math.hypot(x + 140, z + 310);
+      if (score < best) { best = score; MB = [x, z]; berth2 = [wx, wz]; landingTangent = [tx, tz]; }
     }
     if (!MB) MB = [westDoor[0] - max * 12, westDoor[1] - maz * 12];
   }
@@ -200,7 +203,10 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
   // Scow route: alongside at the canal landing, through the canal, down the river, across the
   // millpond to the mill landing. Its water level is carried along the route (the grid near the
   // Gorge reads as tidal, but the millpond sits at the dam's level).
-  const scowPath = new Path([berth1, ...R.scow.slice(1), berth2]);
+  // Turn toward the landing before reaching it, then come alongside with the bow downstream.
+  const approach = [berth2[0] - landingTangent[0] * 22, berth2[1] - landingTangent[1] * 22];
+  const approachJoin = R.scow.slice().reverse().find((p) => p[1] < approach[1] - 12);
+  const scowPath = new Path([berth1, ...R.scow.slice(1, R.scow.indexOf(approachJoin) + 1), approach, berth2]);
   const scowLevel = (() => {
     const n = 240, out = new Float32Array(n + 1);
     let last = canalLevel;
@@ -461,8 +467,9 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       target = [lerp(pos[0], b.look[0], 0.5 * w), lerp(pos[1], b.look[1], 0.5 * w)];
       const sep = Math.hypot(pos[0] - b.look[0], pos[1] - b.look[1]);
       const away = Math.atan2(pos[0] - b.look[0], pos[1] - b.look[1]);
-      const side = Math.sin(from - away) >= 0 ? 1 : -1;
-      from = lerpAngle(from, away + side * 1.15, w);
+      const side = b.cameraSide ??= Math.sin(from - away) >= 0 ? 1 : -1;
+      // Keep the same side of a beat and avoid pivoting around a near-zero separation.
+      from = lerpAngle(from, away + side * 1.15, w * THREE.MathUtils.smoothstep(sep, 4, 14));
       const narrow = camera.aspect > 0 ? Math.min(1, camera.aspect * 1.1) : 1; // a tall phone screen needs to stand further back to fit both
       dist = lerp(dist, THREE.MathUtils.clamp((sep * 1.25 + 18) / narrow, near.dist, 150 / narrow), w);
       tilt = lerp(tilt, near.tilt + 0.12, w);
@@ -497,7 +504,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     },
     {
       title: 'Down to the canal', seconds: pace.sled.seconds, source: `${MARTIN}, pp. 12–13 and Map 3`, cinema: true, key: 'sled',
-      text: 'A horse team drags the sled down to a landing on the natural canal that joins Lake Utopia to the Magaguadavic River. The teamster walks alongside, and the water boy tags along.',
+      text: 'A horse team drags the sled down to a landing on the natural canal that joins Lake Utopia to the Magaguadavic River. The teamster walks alongside, and the quarry lad tags along.',
       talk: talkOf('sled', B.sled),
       update(t) {
         const d = pace.sled.at(t * pace.sled.seconds);
@@ -544,7 +551,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     },
     {
       title: 'Down the Magaguadavic', seconds: pace.river.seconds, source: `${MARTIN}, p. 13`, cinema: true, key: 'river',
-      text: '…then down the Magaguadavic River to the falls at St. George, and across the millpond to the landing below the company’s mill. Farms line the river, with Riverview Avenue running beside it on the east bank.',
+      text: '…then down the Magaguadavic River to St. George, landing on the bank just upstream of the bridge for the haul to the company’s mill. Farms line the river, with Riverview Avenue running beside it on the east bank.',
       talk: talkOf('river', riverBeats),
       update(t) {
         const d = pace.river.at(t * pace.river.seconds);
@@ -785,6 +792,9 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
         if (camera.position.distanceTo(want.pos) < Math.max(2, view.dist * 0.04)) settling = 0;
       }
     }
+    camera.position.y = Math.max(camera.position.y, groundAt(camera.position.x, camera.position.z) + 3);
+    camera.lookAt(controls.target);
+    camera.updateMatrixWorld();
     lastPos.copy(camera.position); lastTarget.copy(controls.target); placed = true;
     if (state.t >= 1 && state.playing) {
       if (state.step < steps.length - 1) { state.step++; state.t = 0; guide = GUIDE_AFTER; steps[state.step].enter?.(); state.onChange(); }

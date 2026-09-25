@@ -72,13 +72,26 @@ export function buildEncounters(ctx) {
   const along = (s) => scowPath.at(s / riverL); // s: metres along the whole scow route
   const levelY = (s) => scowLevel(s / riverL) * exag();
   // the bank on one side of the channel: walk out from the middle until the ground is above the water
-  const bank = (s, side, from = 2) => {
+  const sampleBank = (s, side, from = 2) => {
     const p = along(s), lv = scowLevel(s / riverL), nx = Math.cos(p.heading) * side, nz = -Math.sin(p.heading) * side;
     for (let d = from; d < 160; d += 0.75) {
       const x = p.x + nx * d, z = p.z + nz * d, w = data.inlandWaterAt(x, z);
       if (data.heightAt(x, z) > lv + 0.15 && (Number.isNaN(w) || data.heightAt(x, z) > w)) return { x, z, d, nx, nz, p };
     }
     return { x: p.x + nx * 20, z: p.z + nz * 20, d: 20, nx, nz, p };
+  };
+  // Interpolate fixed shoreline samples instead of resampling grid boundaries each frame.
+  const banks = new Map();
+  const bank = (s, side) => {
+    const i = Math.floor(s / 4), t = s / 4 - i;
+    const get = (k) => {
+      const key = `${side}:${k}`;
+      if (!banks.has(key)) banks.set(key, sampleBank(k * 4, side));
+      return banks.get(key);
+    };
+    const a = get(i), b = get(i + 1), p = along(s);
+    return { x: lerp(a.x, b.x, t), z: lerp(a.z, b.z, t), d: lerp(a.d, b.d, t),
+      nx: Math.cos(p.heading) * side, nz: -Math.sin(p.heading) * side, p };
   };
   // the nearest point of the route to a place, as metres along it (between a and b)
   const nearestS = ([x, z], a = 0, b = riverL) => { let best = a, bd = Infinity; for (let s = a; s <= b; s += 4) { const p = along(s), d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = s; } } return best; };
@@ -171,9 +184,9 @@ export function buildEncounters(ctx) {
       name: 'Into the Magaguadavic', s, slow: 15, look: [p.x, p.z],
       talk: [
         [0, 'The young hand', 'So the river is our road.', 2.6],
-        [2.8, 'The old hand', 'Before the railways, rivers were the easiest roads in New Brunswick. And going downstream, the current helps.', 5],
+        [2.8, 'The old hand', 'Rivers are some of the easiest roads in New Brunswick. And going downstream, the current helps.', 5],
         [8, 'The young hand', 'Are there any railways here at all?', 2.6],
-        [10.8, 'The old hand', 'Only the Red Granite Company’s tramway, from their quarry down to their shed. The main line won’t reach St. George until 1880.', 5.5],
+        [10.8, 'The old hand', 'Only the Red Granite Company’s tramway, from their quarry down to their shed. Perhaps we’ll get a proper railway one day. It would save us a fair bit of poling.', 5.5],
       ],
     });
   }
@@ -222,7 +235,7 @@ export function buildEncounters(ctx) {
       farmer.x = b0.x + b0.nx * 5; farmer.z = b0.z + b0.nz * 5; farmer.heading = Math.atan2(-b0.nx, -b0.nz);
       farmer.action = tau > 12.8 && tau < 16.5 ? 'shake' : 'idle';
       if (tau < 10) { // running along the bank, level with the scow, barking
-        const at = Number.isFinite(tau) ? Math.max(scowS + 4, s - 60) : s - 30;
+        const at = Number.isFinite(tau) ? lerp(Math.max(scowS + 4, s - 60), s + 18, sm(span(tau, 7, 10))) : s - 30;
         const b = bank(at, side);
         dog.x = b.x + b.nx * 1.2; dog.z = b.z + b.nz * 1.2;
         const n = along(at + 1); dog.heading = n.heading;
@@ -233,9 +246,9 @@ export function buildEncounters(ctx) {
         const b = bank(s + 18, side), wl = levelY(s + 18);
         const jump = span(tau, 10, 10.6), out = sm(span(tau, 10.6, 13)), back = sm(span(tau, 13.5, 18.5));
         const j = [b.x - b.nx * 3, b.z - b.nz * 3], far = [b.x - b.nx * 11, b.z - b.nz * 11];
-        if (tau < 10.6) { dog.x = lerp(b.x, j[0], jump); dog.z = lerp(b.z, j[1], jump); dog.heading = Math.atan2(-b.nx, -b.nz); }
+        if (tau < 10.6) { dog.x = lerp(b.x + b.nx * 1.2, j[0], jump); dog.z = lerp(b.z + b.nz * 1.2, j[1], jump); dog.heading = Math.atan2(-b.nx, -b.nz); }
         else if (tau < 13.5) { dog.x = lerp(j[0], far[0], out); dog.z = lerp(j[1], far[1], out); dog.heading = Math.atan2(-b.nx, -b.nz); }
-        else { dog.x = lerp(far[0], b.x + b.nx, back); dog.z = lerp(far[1], b.z + b.nz, back); dog.heading = Math.atan2(b.nx, b.nz); }
+        else { dog.x = lerp(far[0], b.x + b.nx * 2, back); dog.z = lerp(far[1], b.z + b.nz * 2, back); dog.heading = Math.atan2(b.nx, b.nz); }
         dog.y = () => (tau < 10.6 ? groundAt(b.x, b.z) + Math.sin(Math.PI * jump) * 1.4 : Math.max(wl - 0.55, groundAt(dog.x, dog.z)));
         dog.act = 'idle';
         jumped(tau, 10.6, () => splash.burst(j[0], wl, j[1], 30, 0.9));
@@ -440,14 +453,14 @@ export function buildEncounters(ctx) {
     const { S0, SL, sled } = ctx;
     const len = Math.hypot(SL[0] - S0[0], SL[1] - S0[1]), ux = (SL[0] - S0[0]) / len, uz = (SL[1] - S0[1]) / len;
     const at = (d, side = 0) => [S0[0] + ux * d + uz * side, S0[1] + uz * d - ux * side];
-    const boyRide = life.rideOn(sled, -2.4, 0, 1.2);
+    const boyRide = life.rideOn(sled, 4.2, 0, 0.5);
     const boy = person('boy', { hat: 'cap', move: (f, dt) => { boyRide(f, dt); f.rideY = undefined; f.action = f.moving ? 'walk' : sledBeats[1]?.tau() > 4 && sledBeats[1]?.tau() < 11 ? 'laugh' : 'idle'; f.speed = 1.3; } });
-    speakers['The water boy'] = headOf(boy);
+    speakers['The quarry lad'] = headOf(boy);
     speakers['The teamster'] = () => ctx.teamsterHead?.();
     sledBeats.push({
       name: 'Why a sled?', s: len * 0.18, slow: 12, look: at(len * 0.18),
       talk: [
-        [0, 'The water boy', 'Why a sled? Wouldn’t wheels be faster?', 3],
+        [0, 'The quarry lad', 'Why a sled? Wouldn’t wheels be faster?', 3],
         [3.3, 'The teamster', 'Wheels sink under a load this heavy. Runners spread the weight and slide.', 4.4],
         [8, 'The teamster', 'And the horses only have to drag it downhill to the water.', 3.4],
       ],
@@ -462,7 +475,7 @@ export function buildEncounters(ctx) {
         [2, 'The teamster', 'Whoa! Whoa, boys.', 2],
         [4.2, 'The goose', 'HISSSS!', 1.6],
         [6, 'The teamster', 'Shoo! Go on, get!', 2.2],
-        [8.4, 'The water boy', 'The goose is winning!', 2.4],
+        [8.4, 'The quarry lad', 'The goose is winning!', 2.4],
         [11.2, 'The teamster', 'Walk on.', 1.8],
       ],
     };

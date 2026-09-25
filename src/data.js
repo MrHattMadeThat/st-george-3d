@@ -24,6 +24,31 @@ export async function loadData(base = 'data/') {
   const inTown = (x, z) => x >= T.x0 && x <= T.x1 && z >= T.z0 && z <= T.z1;
   const gridOf = (x, z) => (inTown(x, z) ? town : main);
 
+  // The coarse DEM closes the canal beside the downstream peninsula. Trim its
+  // channel-facing edge before making either the ground or water meshes, so the
+  // drawn channel and height/water lookups share one continuous navigable bed.
+  const channel = meta.route.scow.filter(([x, z]) => x > -365 && x < -115 && z > -3560 && z < -3400);
+  for (let k = 1; k < channel.length; k++) {
+    const [ax, az] = channel[k - 1], [bx, bz] = channel[k];
+    const dx = bx - ax, dz = bz - az, length2 = dx * dx + dz * dz;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - 55 - main.x0) / main.cell));
+    const i1 = Math.min(main.nx - 1, Math.ceil((Math.max(ax, bx) + 55 - main.x0) / main.cell));
+    const j0 = Math.max(0, Math.floor((Math.min(az, bz) - 55 - main.z0) / main.cell));
+    const j1 = Math.min(main.nz - 1, Math.ceil((Math.max(az, bz) + 55 - main.z0) / main.cell));
+    const waterIndex = Math.round((az - main.z0) / main.cell) * main.nx + Math.round((ax - main.x0) / main.cell);
+    const level = main.w[waterIndex];
+    if (!Number.isFinite(level) || level === SEA) continue;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = main.x0 + i * main.cell, z = main.z0 + j * main.cell;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / length2));
+      const d = Math.hypot(x - ax - dx * t, z - az - dz * t), index = j * main.nx + i;
+      if (d > 55) continue;
+      const bed = level - 2.5 + Math.max(0, d - 35) * 0.22;
+      main.h[index] = Math.min(main.h[index], bed);
+      if (d <= 45) main.w[index] = level;
+    }
+  }
+
   // The height of the drawn ground: the same two triangles per cell that world.js builds (the
   // diagonal alternates cell by cell), so anything set on it sits exactly on the surface. A plain
   // bilinear blend can miss the drawn ground by a metre on a steep 30 m cell.

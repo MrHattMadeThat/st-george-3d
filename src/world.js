@@ -490,6 +490,22 @@ function buildTrees(data, toon) {
   ];
   const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toon });
 
+  // Move trees out of the sled corridor, retaining them beside the haul route.
+  const quarry = data.meta.structures.quarry;
+  if (quarry) {
+    const ax = quarry.x, az = quarry.z, [bx, bz] = quarry.landing;
+    const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+    for (let k = 0; k < T.n; k++) {
+      const x = T.pos[k * 3], z = T.pos[k * 3 + 1];
+      const u = THREE.MathUtils.clamp(((x - ax) * dx + (z - az) * dz) / (len * len), 0, 1);
+      const cx = ax + dx * u, cz = az + dz * u;
+      if (Math.hypot(x - cx, z - cz) < 14) {
+        const side = (x - cx) * dz - (z - cz) * dx >= 0 ? 1 : -1;
+        const nx = cx + side * dz / len * 19, nz = cz - side * dx / len * 19;
+        T.pos.set([nx, nz, data.heightAt(nx, nz)], k * 3);
+      }
+    }
+  }
   // Shuffle once so showing only the first N trees thins the forest evenly.
   const order = new Uint32Array(T.n);
   for (let k = 0; k < T.n; k++) order[k] = k;

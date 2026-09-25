@@ -541,21 +541,22 @@ renderer.setAnimationLoop((now) => {
   }
   // keep the camera out of the hills
   const floor = groundY(camera.position.x, camera.position.z) + 3;
-  if (camera.position.y < floor) camera.position.y = floor;
+  if (!journey.active && camera.position.y < floor) camera.position.y = floor;
 
   if ($('opt-tide-run').checked) { tideClock += dt * ((2 * Math.PI) / 60); setTide(+(Math.sin(tideClock) * 3.5).toFixed(2)); }
   world.update(dt);
   if (!flight) journey.frame(dt);
-  talkUI();
   if (fadeEl.style.opacity !== String(journey.state.fade)) fadeEl.style.opacity = journey.state.fade;
-  life.update(dt);
   journey.update(dt);
   scenes.update(dt, elapsed);
+  life.update(dt);
   critters.update(dt, elapsed, { camera, groundY: (x, z) => data.heightAt(x, z) * world.exag });
   tramway.update(reducedMotion ? 0 : dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 
+  camera.updateMatrixWorld();
+  talkUI();
   turnCompass();
   if (journey.state.playing) {
     const k = journey.state.step; if (bars[k]) bars[k].style.width = `${journey.state.t * 100}%`;
