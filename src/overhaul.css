@@ -165,3 +165,37 @@ body.story #btn-expand { display:none !important; }
 }
 @media (max-width:700px) { .cap-head { padding:8px 0 4px; } .cap-kicker { display:none; } }
 body.clean .cap-head { display:none; }
+
+/* ---- speech: a bubble over whoever is talking, its tail reaching down to them */
+#bubble { position:fixed; left:0; top:0; z-index:5; max-width:min(360px, calc(100vw - 32px)); padding:9px 14px 10px; background:#fffdf6; border:1.5px solid var(--ink);
+  border-radius:14px; box-shadow:var(--shadow); pointer-events:none; will-change:transform; }
+#bubble.pop { animation:bubble-in .15s ease-out; }
+@keyframes bubble-in { from { opacity:0; } to { opacity:1; } }
+#bubble::before { content:''; position:absolute; left:calc(var(--tail-x, 40px) - 1px); top:100%; width:1.5px; height:var(--tail-h, 12px); background:var(--ink); opacity:.55; }
+#bubble::after { content:''; position:absolute; left:calc(var(--tail-x, 40px) - 7px); top:100%; margin-top:-7px; width:12px; height:12px; background:#fffdf6;
+  border:solid var(--ink); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
+#bubble.far::before { background:repeating-linear-gradient(var(--ink) 0 4px, transparent 4px 8px); }
+#bubble.below::before { top:auto; bottom:100%; }
+#bubble.below::after { top:auto; bottom:100%; margin:0 0 -7px; transform:rotate(225deg); }
+#bubble.free::before, #bubble.free::after { display:none; }
+#bubble p { margin:0; }
+#bubble .talk-who { font:700 10px var(--sans); letter-spacing:.08em; text-transform:uppercase; color:var(--sea); }
+#bubble .talk-says { font:17px/1.35 var(--serif); margin-top:2px; }
+@media (prefers-reduced-motion: reduce) { #bubble.pop { animation:none; } }
+
+/* ---- on the long legs the story card steps aside for a bar along the bottom */
+#minibar { position:fixed; left:50%; bottom:34px; transform:translateX(-50%); z-index:6; display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background:#faf9f1f2; border:1px solid #29493630; border-radius:12px; box-shadow:var(--shadow); max-width:calc(100vw - 24px); }
+#minibar[hidden] { display:none; }
+#minibar .mb-info { margin:0 6px 0 2px; font:14px var(--serif); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#minibar #mb-step { font:600 11px var(--sans); color:var(--ink-soft); margin-right:4px; }
+#minibar button { border:1px solid #29493640; background:#fff; color:var(--ink); border-radius:8px; padding:7px 11px; font:600 13px var(--sans); cursor:pointer; white-space:nowrap; }
+#minibar button:hover { background:var(--gold-soft); }
+#minibar button.primary { background:var(--ink); color:#fff; border-color:var(--ink); min-width:42px; }
+#minibar button.skip { background:var(--granite); color:#fff; border-color:var(--granite); }
+#minibar button.skip:hover { background:var(--granite-dark); }
+#minibar button:disabled { opacity:.45; cursor:default; }
+#minibar #mb-back { border:0; background:none; font-size:17px; padding:6px 8px; }
+body.cinema #caption, body.cinema #view-title { display:none !important; }
+body.clean #minibar { display:none !important; }
+@media (max-width:700px) { #minibar { bottom:12px; gap:6px; padding:6px; } #minibar .mb-info, #mb-story { display:none; } #bubble .talk-says { font-size:14px; } }

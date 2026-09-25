@@ -9,6 +9,8 @@
 //
 // When the journey isn't playing, its props and crews wait at their places as part of the scene.
 import * as THREE from 'three';
+import { buildEncounters } from './encounters.js';
+import { CARTOON } from './people.js';
 
 const MARTIN = 'Martin (2013), The Granite Industry of Southwestern New Brunswick';
 const OHALLORAN = "O'Halloran (1968), History of the Granite Industry in St. George";
@@ -29,25 +31,49 @@ const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1);
 const span = (t, a, b) => clamp01((t - a) / (b - a)); // 0..1 over the part of a step from a to b
 const lerp = (a, b, t) => a + (b - a) * t;
-// Horse teams move at a walk. A route too long to walk in its step's time gets a cut: the team
-// walks off, the picture dips to paper for a moment, and the team walks the last stretch in.
-const TEAM_WALK = 1.8; // m/s
-const RAMP = 0.12; // share of a stretch spent starting or stopping
-const walkIn = (t) => { const v = 1 / (1 - RAMP / 2); return t < RAMP ? (v * t * t) / (2 * RAMP) : v * (t - RAMP / 2); }; // from rest, ends walking
-const walkOut = (t) => 1 - walkIn(1 - t); // arrives walking, ends at rest
-const cruise = (t) => (t < 0.5 ? walkIn(t * 2) : 1 + walkOut(t * 2 - 1)) / 2; // start, walk steadily, stop
-const DIP = 0.07; // half-width of the dip to paper, as a share of the step
-function travel(t, len, seconds) {
-  if (len <= TEAM_WALK * seconds * 0.85) return { u: cruise(t), fade: 0, side: 0 };
-  const shown = (TEAM_WALK * seconds * 0.42) / len; // share of the route seen at each end
-  const fade = 1 - Math.min(1, Math.abs(t - 0.5) / DIP);
-  return t < 0.5 ? { u: shown * walkIn(t / 0.5), fade: fade * fade * (3 - 2 * fade), side: 0 }
-    : { u: 1 - shown * (1 - walkOut((t - 0.5) / 0.5)), fade: fade * fade * (3 - 2 * fade), side: 1 };
+// The long legs (the sled haul, the canal, the river, the haul through town) are paced by their
+// beats (see encounters.js): the load goes at `slow` through each beat, stops for a beat's `hold`,
+// and speeds up to `fast` between them, easing over `ramp` metres. Starting and stopping are slow
+// too. Returns the leg's length in seconds, where the load is at any moment, and when it reaches
+// each beat. (No cuts and no fades: long stretches just go quicker, with the camera higher.)
+function pacer(len, beats, { slow, fast, ramp }) {
+  const e = (v) => { const t = clamp01(v); return t * t * (3 - 2 * t); };
+  const zones = beats.map((b) => ({ a: Math.max(0, b.s - (slow * b.slow) / 2), b: Math.min(len, b.s + (slow * b.slow) / 2), hold: b.hold ?? 0, at: b.s }));
+  const weight = (s) => { // 1 in a beat, 0 cruising between
+    let w = 0, k = -1;
+    zones.forEach((z, q) => { const d = s < z.a ? z.a - s : s > z.b ? s - z.b : 0; const v = 1 - e(d / ramp); if (v > w) { w = v; k = q; } });
+    return { w, k };
+  };
+  const speed = (s) => {
+    const ends = Math.max(1 - e(s / (ramp * 0.5)), 1 - e((len - s) / (ramp * 0.5)));
+    const { w } = weight(s);
+    return Math.max(slow * 0.35, (slow + (fast - slow) * (1 - Math.max(w, ends))) * (ends > 0.95 ? 0.6 : 1));
+  };
+  const T = [0], S = [0], arrive = zones.map(() => 0), held = zones.map(() => false);
+  let t = 0;
+  for (let s = 0; s < len;) {
+    const ds = Math.min(0.5, len - s);
+    t += ds / speed(s + ds / 2);
+    s += ds;
+    zones.forEach((z, q) => {
+      if (!arrive[q] && s >= z.a) arrive[q] = t;
+      if (!held[q] && s >= z.at && z.hold) { held[q] = true; T.push(t); S.push(s); t += z.hold; }
+    });
+    T.push(t); S.push(s);
+  }
+  const at = (time) => {
+    if (time <= 0) return 0;
+    if (time >= t) return len;
+    let lo = 0, hi = T.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= time) lo = m; else hi = m; }
+    return lerp(S[lo], S[hi], T[hi] > T[lo] ? (time - T[lo]) / (T[hi] - T[lo]) : 0);
+  };
+  return { seconds: t, at, arrive, speed, weight };
 }
 const lerpAngle = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
 const unit = (ax, az, bx, bz) => { const d = Math.hypot(bx - ax, bz - az) || 1; return [(bx - ax) / d, (bz - az) / d]; };
 
-export function buildJourney({ scene, camera, controls, data, world, life, setTide }) {
+export function buildJourney({ scene, camera, controls, data, world, life, critters, setTide }) {
   const { meta } = data;
   const S = meta.structures, R = meta.route;
   const exag = () => world.exag;
@@ -262,6 +288,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   let lastSide = 0, sideStep = -1;
   const at = (k) => state.step === k;
   const running = { derrick: false, fall1: false, fall2: false, tackle: false };
+  const polers = [], crew = {}, say = { goose: () => -Infinity };
   if (life) {
     const person = life.person;
     // The scow's polers walk the pole, one each side, taking turns: plant it by the bow, lean on
@@ -272,7 +299,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     const PV = new THREE.Vector3();
     [[-2.3, BOW, true], [2.3, 0.5, false]].forEach(([lx, lz0, push0], k) => {
       const st = { lz: lz0, push: push0 };
-      person('quarryman', { tool: 'pole', y: life.rideY, move: (f, dt) => {
+      polers[k] = person('quarryman', { tool: 'pole', y: life.rideY, hat: k ? 'cap' : 'straw', beard: !k, move: (f, dt) => {
         if (k === 0) { // once a frame: how fast the scow is going
           const d = scowWas.distanceTo(scow.position);
           scowV.speed = d > 20 || dt <= 0 ? 0 : scowV.speed + (d / dt - scowV.speed) * Math.min(1, dt * 4);
@@ -309,7 +336,10 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     // the sled team and its teamster
     for (const sx of [-0.6, 0.6]) life.horse({ harness: true, move: life.rideOn(sled, sx, 0, 4.7), y: life.rideY, walking: (h) => h.moving });
     const teamster = life.rideOn(sled, 2.3, 0, 3.4);
-    person('quarryman', { hat: 'straw', move: (f, dt) => { teamster(f, dt); f.action = f.moving ? 'lead' : 'idle'; f.speed = 1.5; }, y: (f) => groundAt(f.x, f.z) });
+    crew.teamster = person('quarryman', { hat: 'straw', move: (f, dt) => {
+      teamster(f, dt);
+      f.action = f.moving ? 'lead' : at(1) && say.goose() > 5.6 && say.goose() < 8.4 ? 'shake' : 'idle'; f.speed = 1.5;
+    }, y: (f) => groundAt(f.x, f.z) });
     // two crews on the shear legs: two men haul the fall, one steadies the load
     const shearCrew = (bank, water, key, busy) => {
       const [ux, uz] = unit(bank[0], bank[1], water[0], water[1]);
@@ -367,7 +397,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 0.9, 2.4, 10, Math.PI), y: life.rideY });
     // the wagon's team and driver
     for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(wagon, sx, 0, 5.4), y: life.rideY, walking: (h) => h.moving });
-    person('townsman', { action: 'drive', tool: 'reins', move: life.rideOn(wagon, 0, 1.3, 1.9), y: life.rideY });
+    crew.driver = person('townsman', { action: 'drive', tool: 'reins', move: life.rideOn(wagon, 0, 1.3, 1.9), y: life.rideY });
   }
 
   // ---- resting places
@@ -392,6 +422,53 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     idleFall(fall1, shears1.apex); idleFall(fall2, shears2.apex);
     rope0(tackle); rope0(derrickSling);
   }
+
+  // ---- what happens along the way (encounters.js), and the pace of the long legs
+  const U1 = 0.26; // the canal's share of the scow's route; the rest is the river and the millpond
+  const scowL = scowPath.length, canalL = U1 * scowL;
+  const sledLen = Math.hypot(SL[0] - S0[0], SL[1] - S0[1]);
+  const where = { scowS: 0, wagonS: 0, wagonV: 0 };
+  const headOf = (f) => () => (f && !f.hidden ? { x: f.x, y: (f.lastY ?? groundAt(f.x, f.z)) + 2.25 * CARTOON, z: f.z } : null);
+  const enc = life && critters ? buildEncounters({
+    life, critters, world, data, scene, toon, scowPath, L: scowL, U1, scowLevel, S0, SL, sled, cartPath,
+    scowS: () => where.scowS, wagonS: () => where.wagonS, wagonMoving: () => where.wagonV > 0.15 && state.playing,
+    teamsterHead: headOf(crew.teamster), driverHead: headOf(crew.driver), time: () => performance.now() / 1000,
+  }) : null;
+  const speakers = { 'The old hand': headOf(polers[0]), 'The young hand': headOf(polers[1]), ...(enc?.speakers ?? {}) };
+  const B = enc?.beats ?? { sled: [], canal: [], river: [], town: [] };
+  const riverBeats = B.river.map((b) => ({ ...b, s: b.s - canalL }));
+  const pace = {
+    sled: pacer(sledLen, B.sled, { slow: 1.5, fast: 3.2, ramp: 10 }),
+    canal: pacer(canalL, B.canal, { slow: 3.2, fast: 45, ramp: 45 }),
+    river: pacer(scowL - canalL, riverBeats, { slow: 3.2, fast: 55, ramp: 55 }),
+    town: pacer(cartPath.length, B.town, { slow: 2, fast: 6, ramp: 10 }),
+  };
+  // the talk of a paced leg, as [start, who, line, end] in shares of the step
+  const talkOf = (key, beats) => {
+    const p = pace[key], out = [];
+    beats.forEach((b, q) => { for (const [dt, who, line, dur = 3.5] of b.talk ?? []) out.push([(p.arrive[q] + dt) / p.seconds, who, line, (p.arrive[q] + dt + dur) / p.seconds]); });
+    return out.sort((a, b) => a[0] - b[0]);
+  };
+  // the camera on a paced leg: close and turned toward whatever is going on in a beat, higher
+  // and further back while the load hurries between beats
+  const pacedView = (key, beats, s, pos, heading, near) => {
+    const p = pace[key], { w, k } = p.weight(s), b = beats[k];
+    const fastness = clamp01((p.speed(s) - near.slow) / (near.fast - near.slow));
+    let target = [pos[0], pos[1]], from = heading + near.from, dist = near.dist + near.far * fastness, tilt = near.tilt + 0.25 * fastness;
+    if (b?.look && w > 0) {
+      // both in the picture, side by side: aim between them, from off to one side of the line
+      // joining them (the side the story's camera is already on), far enough back for both
+      target = [lerp(pos[0], b.look[0], 0.5 * w), lerp(pos[1], b.look[1], 0.5 * w)];
+      const sep = Math.hypot(pos[0] - b.look[0], pos[1] - b.look[1]);
+      const away = Math.atan2(pos[0] - b.look[0], pos[1] - b.look[1]);
+      const side = Math.sin(from - away) >= 0 ? 1 : -1;
+      from = lerpAngle(from, away + side * 1.15, w);
+      const narrow = Math.min(1, camera.aspect * 1.1); // a tall phone screen needs to stand further back to fit both
+      dist = lerp(dist, THREE.MathUtils.clamp((sep * 1.25 + 18) / narrow, near.dist, 150 / narrow), w);
+      tilt = lerp(tilt, near.tilt + 0.12, w);
+    }
+    return { target, dist, from, tilt };
+  };
 
   // ---- the steps
   const steps = [
@@ -419,15 +496,16 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Down to the canal', seconds: 16, source: `${MARTIN}, pp. 12–13 and Map 3`,
-      text: 'A horse team drags the sled down to a landing on the natural canal that joins Lake Utopia to the Magaguadavic River. The teamster walks alongside.',
+      title: 'Down to the canal', seconds: pace.sled.seconds, source: `${MARTIN}, pp. 12–13 and Map 3`, cinema: true, key: 'sled',
+      text: 'A horse team drags the sled down to a landing on the natural canal that joins Lake Utopia to the Magaguadavic River. The teamster walks alongside, and the water boy tags along.',
+      talk: talkOf('sled', B.sled),
       update(t) {
-        const go = travel(t, Math.hypot(SL[0] - S0[0], SL[1] - S0[1]), 16);
-        const x = lerp(S0[0], SL[0], go.u), z = lerp(S0[1], SL[1], go.u);
+        const d = pace.sled.at(t * pace.sled.seconds);
+        const x = lerp(S0[0], SL[0], d / sledLen), z = lerp(S0[1], SL[1], d / sledLen);
         const [sx, sz] = unit(S0[0], S0[1], SL[0], SL[1]);
         sledTo(x, z, Math.atan2(sx, sz));
         blockOn(sled, 0.4);
-        return { target: [x, z], dist: 45, from: Math.atan2(sx, sz) + 2.3, tilt: 0.32, fade: go.fade, side: go.side };
+        return pacedView('sled', B.sled, d, [x, z], Math.atan2(sx, sz), { slow: 1.5, fast: 3.2, dist: 34, far: 14, from: 2.3, tilt: 0.3 });
       },
     },
     {
@@ -451,34 +529,30 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'By scow through the canal', seconds: 20, source: `${MARTIN}, p. 13`,
+      title: 'By scow through the canal', seconds: pace.canal.seconds, source: `${MARTIN}, p. 13`, cinema: true, key: 'canal',
       text: 'In summer the rough stone went by water. The polers walk the scow along, pushing their poles against the bottom of the canal.',
-      // the polers talk as they work: [when in the step, who, what]
-      talk: [
-        [0.08, 'The young hand', 'Why not haul the block to the mill by road?'],
-        [0.36, 'The old hand', 'Over those hills? The roads are rough, and a block this heavy would wear out a team. On the water, it floats.'],
-        [0.68, 'The old hand', 'The only rails here are the Red Granite Company’s tramway, down from their quarry to their shed. The main line won’t reach St. George until 1880.'],
-      ],
+      talk: talkOf('canal', B.canal),
       update(t) {
         running.fall1 = false; idleFall(fall1, shears1.apex);
-        const s = scowAt(0.26 * ease(t));
+        const d = pace.canal.at(t * pace.canal.seconds);
+        where.scowS = d;
+        const s = scowAt(d / scowL);
         put(scow, s.x, s.y, s.z, s.heading);
         blockOn(scow, 1.4, s.heading);
-        return { target: [s.x, s.z], dist: 45, from: s.heading + 2.4, tilt: 0.3 };
+        return pacedView('canal', B.canal, d, [s.x, s.z], s.heading, { slow: 3.2, fast: 45, dist: 40, far: 260, from: 2.4, tilt: 0.3 });
       },
     },
     {
-      title: 'Down the Magaguadavic', seconds: 24, source: `${MARTIN}, p. 13`,
-      text: '…then down the Magaguadavic River to the falls at St. George, and across the millpond to the landing below the company’s mill.',
-      talk: [
-        [0.06, 'The young hand', 'So the river is our road.'],
-        [0.3, 'The old hand', 'Before the railways, rivers were the easiest roads in New Brunswick. Heavy loads float, and going downstream the current helps push us along to the falls.'],
-      ],
+      title: 'Down the Magaguadavic', seconds: pace.river.seconds, source: `${MARTIN}, p. 13`, cinema: true, key: 'river',
+      text: '…then down the Magaguadavic River to the falls at St. George, and across the millpond to the landing below the company’s mill. Farms line the river, with Riverview Avenue running beside it on the east bank.',
+      talk: talkOf('river', riverBeats),
       update(t) {
-        const s = scowAt(0.26 + 0.74 * ease(t));
+        const d = pace.river.at(t * pace.river.seconds);
+        where.scowS = canalL + d;
+        const s = scowAt((canalL + d) / scowL);
         put(scow, s.x, s.y, s.z, s.heading);
         blockOn(scow, 1.4, s.heading);
-        return { target: [s.x, s.z], dist: 70 + 330 * Math.sin(Math.PI * Math.min(t, 0.85) / 0.85), from: s.heading + 2.8, tilt: 0.33 + 0.2 * Math.sin(Math.PI * Math.min(t, 0.85) / 0.85) };
+        return pacedView('river', riverBeats, d, [s.x, s.z], s.heading, { slow: 3.2, fast: 55, dist: 40, far: 320, from: 2.6, tilt: 0.3 });
       },
     },
     {
@@ -500,11 +574,11 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Into the mill', seconds: 26, source: `${MARTIN}, p. 13 and Map 4`,
+      title: 'Into the mill', seconds: 24, source: `${MARTIN}, p. 13 and Map 4`,
       text: 'A horse team draws the truck up from the landing and in through the big doors of the Bay of Fundy Red Granite Co.’s mill.',
       update(t) {
         running.fall2 = false; idleFall(fall2, shears2.apex);
-        const p = truckPath.at(travel(t, truckPath.length, 26).u);
+        const p = truckPath.at(ease(t)); // about 60 m at a walk: no cut needed
         put(truck, p.x, groundAt(p.x, p.z), p.z, p.heading);
         blockOn(truck, 1.35, p.heading);
         block.visible = t < 0.97;
@@ -551,17 +625,19 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       },
     },
     {
-      title: 'Through town to the wharf', seconds: 18, source: `${MARTIN}, Map 4; ${OHALLORAN}`,
+      title: 'Through town to the wharf', seconds: pace.town.seconds, source: `${MARTIN}, Map 4; ${OHALLORAN}`, cinema: true, key: 'town',
       text: 'A horse team hauls the column down through the town, past the Gorge, to the main wharf on St. George Basin.',
+      talk: talkOf('town', B.town),
       update(t) {
         placeSkids(false);
-        const go = travel(t, cartPath.length, 18);
-        const c = cartPath.at(go.u);
+        const d = pace.town.at(t * pace.town.seconds);
+        where.wagonV = pace.town.speed(d); where.wagonS = d;
+        const c = cartPath.at(d / cartPath.length);
         put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
         column.rotation.x = 0;
         column.visible = true;
         put(column, c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z, c.heading + Math.PI / 2);
-        return { target: [c.x, c.z], dist: 42, from: c.heading + 2.4, tilt: 0.33, fade: go.fade, side: go.side };
+        return pacedView('town', B.town, d, [c.x, c.z], c.heading, { slow: 2, fast: 6, dist: 34, far: 30, from: 2.4, tilt: 0.33 });
       },
     },
     {
@@ -586,7 +662,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     },
     {
       title: 'Down the estuary on the tide', seconds: 12, source: `${MARTIN}, p. 10`,
-      text: 'At high water the schooner slips down the tidal Magaguadavic, past the Red Store wharf at Breadalbane…',
+      text: 'At high water the schooner slips down the tidal Magaguadavic, past the Red Store wharf at Breadalbane and a herring weir: a fence of stakes and brush that traps fish on the falling tide…',
       enter() { setTide(3.2); },
       update(t) {
         rope0(tackle); running.tackle = false;
@@ -610,6 +686,16 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     },
   ];
 
+  // each beat's clock: seconds since the load reached it (-Infinity before, Infinity after)
+  steps.forEach((st, k) => {
+    if (!st.key) return;
+    const beats = B[st.key], p = pace[st.key];
+    beats.forEach((b, q) => { b.tau = () => (state.step === k ? state.t * st.seconds - p.arrive[q] : state.step > k ? Infinity : -Infinity); });
+    st.stops = p.arrive.map((a) => Math.max(0, a - 1.5) / st.seconds); // "skip to the next stop" lands just before each beat
+  });
+  // on the old steps (the quarry, the loading), the goose's clock
+  say.goose = () => B.sled[1]?.tau?.() ?? -Infinity;
+
   // ---- playing
   const want = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
   const wantWas = new THREE.Vector3(), V3 = new THREE.Vector3();
@@ -625,6 +711,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
   let guide = 0;
   const lastPos = new THREE.Vector3(), lastTarget = new THREE.Vector3();
   let placed = false; // the camera is where this code last put it
+  let jumped = false; // the story skipped ahead within a step: the camera cuts with it
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
   function go(k) {
@@ -649,6 +736,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
     if (state.step < 0) return;
     const s = steps[state.step];
     if (state.playing && settling <= 0) state.t = Math.min(1, state.t + (dt * state.speed) / s.seconds);
+    if (jumped) { snap = true; jumped = false; }
     const view = s.update(state.t);
     state.fade = view.fade ?? 0;
     const side = view.side ?? 0;
@@ -711,7 +799,19 @@ export function buildJourney({ scene, camera, controls, data, world, life, setTi
       state.playing = true; state.onChange();
     },
     pause() { state.playing = false; placed = false; state.onChange(); },
-    go, stop, frame,
+    go, stop, frame, speakers,
+    /** jump within the current step (0..1); the camera cuts with it */
+    seek(t) { state.t = clamp01(t); jumped = true; guide = GUIDE_AFTER; state.onChange(); },
+    /** the next stop: the next beat of a long leg, or else the next step */
+    skip() {
+      const s = steps[state.step];
+      if (!s) return;
+      const next = s.stops?.find((u) => u > state.t + 0.002);
+      if (next !== undefined) { state.t = next; jumped = true; guide = GUIDE_AFTER; state.onChange(); return; }
+      if (state.step < steps.length - 1) { const was = state.playing; go(state.step + 1); if (was) state.playing = true; state.onChange(); }
+    },
+    /** move the story's own things (the beats' actors) */
+    update(dt) { enc?.update(dt); },
     /** put props back after the hill height changes */
     refresh() { if (state.step < 0) rest(); else { shears1.place(); shears2.place(); } },
     get active() { return state.step >= 0; },

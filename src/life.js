@@ -32,8 +32,8 @@ export function buildLife({ scene, data, world, camera }) {
   const exag = () => world.exag;
   const groundY = (x, z) => data.heightAt(x, z) * exag();
 
-  const crowd = new Crowd(700, world.toon);
-  const herd = new Herd(40, world.toon, crowd.material);
+  const crowd = new Crowd(840, world.toon);
+  const herd = new Herd(64, world.toon, crowd.material);
   const chips = new Chips(220, crowd.material);
   const mat = crowd.material;
   const life = new THREE.Group();

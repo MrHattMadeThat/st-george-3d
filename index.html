@@ -143,11 +143,20 @@
     <div class="cap-ctl">
       <button type="button" id="cap-prev" title="Previous step" aria-label="Previous step">‹</button>
       <button type="button" id="cap-play" class="primary" title="Play or pause (Space)" aria-label="Play or pause">❚❚</button>
-      <button type="button" id="cap-next" title="Next step" aria-label="Next step">›</button>
+      <button type="button" id="cap-next" title="Skip to the next stop (→)" aria-label="Skip to the next stop">›</button>
     </div>
     <p class="cap-paused" id="cap-paused" hidden>Paused: look around freely. Press play and the camera flies back.</p>
   </div>
 
+  <div id="bubble" hidden aria-live="polite"><p class="talk-who"></p><p class="talk-says"></p></div>
+  <div id="minibar" hidden role="toolbar" aria-label="The Stone’s Journey">
+    <button type="button" id="mb-back" title="Leave the journey and go back to the map (Esc)" aria-label="Back to the map">←</button>
+    <p class="mb-info"><span id="mb-step"></span> <strong id="mb-title"></strong></p>
+    <button type="button" id="mb-story" aria-pressed="false">Read the story</button>
+    <button type="button" id="mb-prev" title="Previous step (←)" aria-label="Previous step">‹</button>
+    <button type="button" id="mb-play" class="primary" title="Play or pause (Space)" aria-label="Play or pause">❚❚</button>
+    <button type="button" id="mb-skip" class="skip" title="Skip ahead to the next stop (→)">Next stop ›</button>
+  </div>
   <div id="fade" aria-hidden="true"></div>
   <div id="loading" role="status"><span>Laying out the landscape…</span></div>
   <p id="credit">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: AWS Terrain Tiles</p>
@@ -160,7 +169,7 @@
       <div>
         <h3>What’s here</h3>
         <ul class="whats-here">
-          <li><b>The Stone’s Journey:</b> a 13-step story that follows one block of granite from the quarry to a schooner.</li>
+          <li><b>The Stone’s Journey:</b> a 13-step story that follows one block of granite from the quarry to a schooner, with stops along the way. Use <b>Next stop</b> to skip ahead.</li>
           <li><b>About 450 people and 30 horses</b> at work in the quarry, the mill, the town and on the water.</li>
           <li><b>Gold pins</b> on historic sites. Click one to read about it and where the facts come from.</li>
           <li><b>The tide</b>, the hills and the trees can all be changed in the <b>View</b> tab.</li>
@@ -178,7 +187,7 @@
         <h3>Keys</h3>
         <table class="controls-table">
           <tr><th><kbd>Space</kbd></th><td>Play or pause the journey</td></tr>
-          <tr><th><kbd>←</kbd> <kbd>→</kbd></th><td>Previous or next step (while the journey is on)</td></tr>
+          <tr><th><kbd>←</kbd> <kbd>→</kbd></th><td>Previous step, or skip ahead to the next stop (while the journey is on)</td></tr>
           <tr><th><kbd>1</kbd>–<kbd>9</kbd></th><td>Fly to the wide views</td></tr>
           <tr><th><kbd>G</kbd> <kbd>T</kbd> <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></th><td>Close-ups: the Gorge, the tramway, people at work</td></tr>
           <tr><th><kbd>Esc</kbd></th><td>Stop the journey</td></tr>
@@ -213,6 +222,8 @@
       <li>Names marked * are placed by eye from maps or written descriptions. Churches stand at today’s church sites; their 1874 sites are not confirmed.</li>
       <li>The people are illustrations of the work the sources describe: quarrymen drilling rows of holes and splitting blocks, a horse derrick, stonecutters at their bankers, teamsters, polishers and shippers (O’Halloran 1968), and the everyday life of a small town. They are not particular people.</li>
       <li>The Stone’s Journey follows the Bay of Fundy company’s way of working as Martin describes it. The sleds, shear legs, stone truck, rollers, skids and tackle that move the stone are the ordinary tools of the trade, shown to explain how it could have been done, not recorded details.</li>
+      <li>The things the stone passes on its way (the hay wagon, the cow, the farm dog, the canoe, the salmon fisherman, the swimming hole, the log boom, the ducks, the goose, the hoops, the ladder and the hens) are made-up scenes of everyday life, not recorded events. The people who talk in them are not particular people.</li>
+      <li>Riverview Avenue follows today’s Riverview Avenue, Route 770 and Canal Road. Its 1874 course, the bridge over the canal and the farms along it are drawn by eye. The Main Street shops, their signs and the plank sidewalk show a small town’s business street of the time, not particular firms.</li>
     </ul>
     <h3>Sources</h3>
     <ul id="sources"></ul>

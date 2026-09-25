@@ -35,7 +35,7 @@ the internet at run time).
 | `?q=low` / `?q=high` | force the light or full picture (otherwise it lightens itself on slow computers) |
 
 Keys: **1–9** fly to the camera stops, **H** toggles clean view, **Space** plays or pauses the
-journey, **← →** step back and forward through it, **Esc** closes a place card or stops the journey.
+journey, **←** steps back and **→** skips ahead to the next stop, **Esc** closes a place card or stops the journey.
 A start screen explains the controls (skip it with `?nowelcome`; `?clean`, `?journey` and `?preset` skip it too).
 Pausing the journey hands the camera to the viewer; pressing play flies it back and the story waits
 until it arrives. The buttons under the compass zoom, turn and tilt, and the compass itself turns to face north.
@@ -57,6 +57,28 @@ About 450 people and 30 horses, all posed in code ([src/people.js](src/people.js
   rowing about the Basin, sailors on the schooner, gulls.
 - **Out of town**: farmers hoeing, horses grazing, people about the villages, a team waiting at the Red Store.
 - **The journey**: the scow's polers pole only while it moves; the wagon has a walking team and a driver.
+- **Background scenes** ([src/scenes.js](src/scenes.js)), always playing: a blacksmith sharpening drills at
+  his forge by the quarry shanty, two men splitting a block with plugs and feathers beside the sled road,
+  a dog that steals a quarryman's lunch pail (the water boy gives chase), a boy at the canal landing who
+  fishes up a boot, a goat that eats a stonecutter's hat in the mill yard, a gull that steals a fish on
+  the main wharf, a herring weir off Breadalbane, cows, pigs, hens and dogs at the farms along Riverview
+  Avenue, a peddler's cart working the road, and hens and dogs about the town.
+- **Animals** ([src/critters.js](src/critters.js)): dogs, cats, cows, pigs, goats, geese, hens and ducks,
+  their legs paced by distance like the people's.
+
+## The town close up
+
+Main Street's business block has false-fronted shops shoulder to shoulder on a plank sidewalk, each
+with a painted signboard (general store, dry goods, hardware, a hotel, the post office...), some with
+awnings, barrels by the door and a hitching rail. Walls are clapboard and roofs are shingled (canvas
+textures tinted per building), about half the houses have a picket fence across the front, and there
+are shade trees in the yards. The town's streets and yards are drawn from distance masks, so their
+edges stay crisp between the 2.5 m paint pixels, with wheel ruts, a hoof-worn crown and puddles.
+The build levels the ground a metre or so under each town building and across Main Street.
+
+**Riverview Avenue** runs from Main Street up the east side of the Magaguadavic and on by the Canal
+Road to the canal landing (today's Riverview Avenue, Route 770 and Canal Road from OpenStreetMap,
+`data/raw/osm-riverview.json`), a dirt road with a timber bridge over the canal and six farms along it.
 
 Walking, running and the horses' walk are paced by how far each figure really moves, not by the
 clock, and a foot on the ground stays planted (legs bend at the knee). Each body part is one instanced mesh for the whole crowd, so everyone costs a few dozen draw calls;
@@ -72,9 +94,11 @@ of Fundy Red Granite Co. worked. Nothing floats into place; every hand-off is do
 
 1. The **horse derrick** lifts the block from the foot of the face (its horse walks the capstan
    while the rope winds) and swings it onto a **sled**.
-2. A **horse team** drags the sled to the canal landing, the teamster walking alongside.
+2. A **horse team** drags the sled to the canal landing, the teamster walking alongside (and a goose in the way).
 3. Men hauling on **shear legs** swing the block onto a **scow**.
-4. and 5. **Polers** walk the scow through the canal and down the Magaguadavic to the mill landing.
+4. and 5. **Polers** walk the scow through the canal and down the Magaguadavic to the mill landing,
+   past a hay wagon on the Canal Road bridge, a cow in the canal, a farm dog, a canoe, a salmon
+   fisherman, a swimming hole, a log boom and a family of ducks.
 6. A second pair of shear legs lowers it onto a **stone truck**.
 7. A team draws the truck in at the mill's **west doors**.
 8. The finished **column** is rolled out of the east doors on **log rollers** to the **lathe**,
@@ -84,13 +108,23 @@ of Fundy Red Granite Co. worked. Nothing floats into place; every hand-off is do
 11. The schooner's crew hauls it aboard on a **tackle** from the foremast.
 12. and 13. Down the estuary on the high tide, past the Red Store, and out through Letete Passage.
 
+The long legs (2, 4, 5 and 10) are paced by their **stops** ([src/encounters.js](src/encounters.js)):
+the load slows or stops at each one while something happens beside it and people talk, in speech
+bubbles that point at whoever is speaking, and hurries between them with the camera pulled back.
+There are no cuts. While they play, the story card steps aside for a bar along the bottom with a
+**Next stop** button (and **→**); **Read the story** brings the card back. The whole journey runs
+about nine minutes.
+
 Each caption names its source. The sleds, trucks, shear legs, rollers and skids are the ordinary
 tools of the trade, used here to show how it could have been done; the route and the companies
 follow Martin (2013).
 
 Steps are in [src/journey.js](src/journey.js): each has a title, a caption, a source, a length
 in seconds, and an `update(t)` that places the props for `t` from 0 to 1 and returns where the
-camera should look. New stories can be written the same way.
+camera should look. A step may carry `talk: [[start, who, line, end]]` (shares of the step); `who`
+is looked up in `journey.speakers` for the bubble's position. The stops' actors and lines are in
+[src/encounters.js](src/encounters.js), each a function of its stop's clock, so skipping anywhere
+puts everyone in place. New stories can be written the same way.
 Mouse: left-drag pans, right-drag turns and tilts, the wheel zooms toward the cursor.
 
 ## Using it as a stage
@@ -124,7 +158,7 @@ flyTo('4'); // or flyTo('The quarry ledges')
 | `setTide(m)` | −3.5 (low water) to +3.5 (high water) |
 | `setExag(k)`, `setTrees(f)` | hill height multiplier, share of trees shown (0–1) |
 | `onFrame(fn)` | `fn(dt, elapsed)` every frame; returns an unsubscribe function |
-| `journey` | `play()`, `pause()`, `go(step)`, `stop()`, `steps`, `state` |
+| `journey` | `play()`, `pause()`, `go(step)`, `seek(t)`, `skip()`, `stop()`, `steps`, `state`, `speakers` |
 | `life` | the people and horses: `person(role, f)`, `horse(h)`, `rideOn(object, x, y, z)`, `crowd.list`, `herd.list` |
 | `world.props` | makers for props: `block()`, `column()`, `scow()`, `schooner()`, `wagon()`, `person(colour)` |
 | `data.meta.structures` | where the mill, dam, flume, bridges, wharves, Red Store, old pine and quarry are |

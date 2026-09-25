@@ -10,11 +10,11 @@ export async function loadData(base = 'data/') {
     return r.arrayBuffer();
   });
   const tex = (name) => new THREE.TextureLoader().loadAsync(base + name);
-  const [meta, heightBuf, waterBuf, treeBuf, paint, masks, townHeightBuf, townWaterBuf, townPaint, townMasks] = await Promise.all([
+  const [meta, heightBuf, waterBuf, treeBuf, paint, masks, townHeightBuf, townWaterBuf, townPaint, townMasks, townStreets] = await Promise.all([
     fetch(base + 'meta.json').then((r) => r.json()),
     bin('height.bin'), bin('water.bin'), bin('trees.bin'),
     tex('paint.png'), tex('masks.png'),
-    bin('town-height.bin'), bin('town-water.bin'), tex('town-paint.png'), tex('town-masks.png'),
+    bin('town-height.bin'), bin('town-water.bin'), tex('town-paint.png'), tex('town-masks.png'), tex('town-streets.png'),
   ]);
 
   // Two grids: the whole stage at 30 m, and the town around the falls at 10 m.
@@ -55,7 +55,7 @@ export async function loadData(base = 'data/') {
   const toLatLon = (x, z) => ({ lat: meta.origin.lat - z / meta.mPerDegLat, lon: meta.origin.lon + x / meta.mPerDegLon });
 
   return {
-    meta, SEA, main, town, inTown, trees, paint, masks, townPaint, townMasks, toLocal, toLatLon,
+    meta, SEA, main, town, inTown, trees, paint, masks, townPaint, townMasks, townStreets, toLocal, toLatLon,
     height: main.h, water: main.w,
     /** ground height in metres (no vertical exaggeration) */
     heightAt: (x, z) => bilinear(gridOf(x, z), x, z),

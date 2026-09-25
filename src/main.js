@@ -7,6 +7,8 @@ import { PRESETS, WORK_STOPS, SOURCES, buildLabels, locate } from './places.js';
 import { buildJourney } from './journey.js';
 import { buildLife } from './life.js';
 import { tramwayLayout, buildTramway } from './tramway.js';
+import { makeCritters } from './critters.js';
+import { buildScenes } from './scenes.js';
 
 const params = new URLSearchParams(location.search);
 const quality = params.get('q') || 'medium';
@@ -84,6 +86,7 @@ Object.assign(data.meta.structures, { tramQuarry: tramLayout.quarry, tramPlatfor
 const world = buildWorld(data, { scene, quality, exag: +$('opt-exag').value });
 const labels = buildLabels(data, scene, showPlace);
 const life = buildLife({ scene, data, world, camera });
+const critters = makeCritters(scene, world.toon);
 const tramway = buildTramway({ data, world, scene, life, layout: tramLayout });
 labels.place(world.exag);
 $('loading').hidden = true;
@@ -270,7 +273,8 @@ $('sources').innerHTML = SOURCES.map((s) => `<li>${s}</li>`).join('') +
 
 // ------------------------------------------------------------------ the Stone's Journey
 
-const journey = buildJourney({ scene, camera, controls, data, world, life, setTide });
+const journey = buildJourney({ scene, camera, controls, data, world, life, critters, setTide });
+const scenes = buildScenes({ scene, data, world, life, critters, journey });
 const stepList = $('j-steps');
 const chapters = [{name:'Quarry', start:0}, {name:'River', start:3}, {name:'Mill', start:5}, {name:'Wharf', start:9}, {name:'Sea', start:11}];
 chapters.forEach(c => { const b = document.createElement('button'); b.textContent = c.name; b.type = 'button'; b.addEventListener('click', () => { flight = null; journey.go(c.start); journey.play(); }); $('chapters').append(b); });
@@ -297,6 +301,7 @@ const bars = journey.steps.map((s, k) => {
   return seg.firstChild;
 });
 let showCaptions = true;
+let storyOpen = false; // on a talking leg, the viewer asked to see the story card anyway
 let journeyShown = false;
 function journeyUI() {
   const { step, playing, t } = journey.state;
@@ -312,6 +317,7 @@ function journeyUI() {
   bars.forEach((b, k) => { b.style.width = k < step ? '100%' : k > step ? '0%' : `${t * 100}%`; });
   document.body.classList.toggle('journey-on', step >= 0);
   if (step >= 0 && !journeyShown && innerWidth <= 700) setCollapsed(true);
+  if (step < 0 && journeyShown) { $('view-name').textContent = 'A closer look'; $('view-description').textContent = 'Explore the landscape at your own pace.'; }
   journeyShown = step >= 0;
   const chapter = chapters.findLastIndex(c => c.start <= step);
   [...$('chapters').children].forEach((b,i) => b.setAttribute('aria-current', i === chapter ? 'step' : 'false'));
@@ -319,6 +325,22 @@ function journeyUI() {
   const s = journey.steps[step];
   $('caption').hidden = !s || !showCaptions;
   document.body.classList.toggle('story', !!s && showCaptions); // the story card takes the menu's place
+  // on the long legs, where people talk, the card steps aside for a bar along the bottom
+  const cinema = !!s?.cinema && showCaptions && !storyOpen;
+  const was = document.body.classList.contains('cinema');
+  document.body.classList.toggle('cinema', cinema);
+  $('minibar').hidden = !(s?.cinema && showCaptions);
+  $('mb-story').setAttribute('aria-pressed', String(storyOpen));
+  $('mb-story').textContent = storyOpen ? 'Hide the story' : 'Read the story';
+  if (was !== cinema) frame();
+  if (s) {
+    $('mb-step').textContent = `${step + 1} / ${journey.steps.length}`;
+    $('mb-title').textContent = s.title;
+    $('mb-play').textContent = playing ? '❚❚' : '▶';
+    const more = s.stops?.some((u) => u > t + 0.002);
+    $('mb-skip').innerHTML = more ? 'Next stop <span aria-hidden="true">›</span>' : step < journey.steps.length - 1 ? 'Next step <span aria-hidden="true">›</span>' : 'The end';
+    $('mb-skip').disabled = !more && step >= journey.steps.length - 1;
+  }
   storyControls(journey.state.playing);
   if (s) {
     $('cap-count').textContent = `Step ${step + 1} of ${journey.steps.length}`;
@@ -327,20 +349,52 @@ function journeyUI() {
     $('cap-source').textContent = `Source: ${s.source}`;
   }
 }
-// the polers' conversation on the long river steps: one line at a time, above the caption
+// Speech: a bubble above whoever is talking, its tail pointing at them. If they can't be seen
+// (behind the camera, or not in the scene), the line shows in a box over the story instead.
 let talkLine = null;
+const bubble = $('bubble'), P3 = new THREE.Vector3();
 function talkUI() {
   const { step, t } = journey.state;
-  const lines = journey.steps[step]?.talk;
-  const line = lines ? [...lines].reverse().find(([at]) => t >= at) ?? null : null;
-  if (line === talkLine) return;
-  talkLine = line;
-  $('talk').hidden = !line;
-  if (line) {
-    $('talk-who').textContent = line[1];
-    $('talk-says').textContent = line[2];
-    $('talk').classList.toggle('reply', line[1] !== lines[0][1]); // the second speaker's box leans the other way
+  const lines = showCaptions ? journey.steps[step]?.talk : null;
+  const line = lines ? lines.findLast(([a, , , b]) => t >= a && t < (b ?? 1.01)) ?? null : null;
+  if (line !== talkLine) {
+    talkLine = line;
+    if (line) {
+      for (const el of [bubble, $('talk')]) { el.querySelector('.talk-who').textContent = line[1]; el.querySelector('.talk-says').textContent = line[2]; }
+      bubble.classList.remove('pop'); void bubble.offsetWidth; bubble.classList.add('pop');
+    }
   }
+  const at = line ? journey.speakers[line[1]]?.() : null;
+  let shown = false;
+  if (at) {
+    P3.set(at.x, at.y, at.z).project(camera);
+    const y = (1 - P3.y) / 2 * innerHeight;
+    if (P3.z < 1 && Math.abs(P3.x) < 0.98 && y > 76 && y < innerHeight - 70) {
+      const x = (P3.x + 1) / 2 * innerWidth;
+      bubble.hidden = false;
+      const w = bubble.offsetWidth, h = bubble.offsetHeight;
+      const left = Math.min(Math.max(x - w * 0.3, 12), innerWidth - w - 12);
+      // above the speaker if there's room, else below with the tail pointing up
+      const below = y - h - 16 < 70;
+      const top = below ? Math.min(y + 18, innerHeight - h - 90) : Math.min(y - h - 16, innerHeight - h - 90);
+      bubble.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
+      const tx = Math.min(Math.max(x - left, 16), w - 16), reach = below ? Math.max(8, top - y) : Math.max(8, y - (top + h));
+      bubble.style.setProperty('--tail-x', `${tx.toFixed(1)}px`);
+      bubble.style.setProperty('--tail-h', `${Math.min(reach, 160).toFixed(1)}px`);
+      bubble.classList.toggle('far', reach > 160);
+      bubble.classList.toggle('below', below);
+      shown = true;
+    }
+  }
+  // nobody to point at, and the story card is away: the line sits over the bottom bar
+  const free = !shown && !!line && document.body.classList.contains('cinema');
+  if (free) {
+    bubble.hidden = false;
+    bubble.style.transform = `translate(${((innerWidth - bubble.offsetWidth) / 2).toFixed(1)}px, ${(innerHeight - bubble.offsetHeight - 110).toFixed(1)}px)`;
+  }
+  bubble.classList.toggle('free', free);
+  bubble.hidden = !shown && !free;
+  $('talk').hidden = !line || shown || free;
 }
 function stepBy(d) {
   const { step, playing } = journey.state;
@@ -356,7 +410,12 @@ $('j-play').addEventListener('click', () => { flight = null; glide = null; if (j
 $('j-stop').addEventListener('click', () => journey.stop());
 $('cap-play').addEventListener('click', () => $('j-play').click());
 $('cap-prev').addEventListener('click', () => stepBy(-1));
-$('cap-next').addEventListener('click', () => stepBy(1));
+$('cap-next').addEventListener('click', () => { flight = null; journey.skip(); });
+$('mb-skip').addEventListener('click', () => { flight = null; journey.skip(); });
+$('mb-prev').addEventListener('click', () => stepBy(-1));
+$('mb-play').addEventListener('click', () => $('j-play').click());
+$('mb-back').addEventListener('click', () => journey.stop());
+$('mb-story').addEventListener('click', () => { storyOpen = !storyOpen; journeyUI(); });
 $('j-speed').addEventListener('change', (e) => { journey.state.speed = +e.target.value; });
 $('cap-back').addEventListener('click', () => journey.stop());
 $('opt-captions').addEventListener('change', (e) => { showCaptions = e.target.checked; journeyUI(); });
@@ -365,7 +424,7 @@ addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLTextAreaElement || e.target.isContentEditable || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || about.open || welcome.open) return;
   if (e.target.getAttribute?.('role') === 'tab') return;
   if (e.key === 'ArrowLeft' && journey.active) { e.preventDefault(); stepBy(-1); return; }
-  if (e.key === 'ArrowRight' && journey.active) { e.preventDefault(); stepBy(1); return; }
+  if (e.key === 'ArrowRight' && journey.active) { e.preventDefault(); flight = null; journey.skip(); return; }
   if (e.key === 'h' || e.key === 'H') toggleClean();
   if (e.key === ' ' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); $('j-play').click(); }
   if (e.key === 'Escape') { if (!$('place-card').hidden) $('place-card').hidden = true; else journey.stop(); }
@@ -461,7 +520,7 @@ function turnCompass() {
 
 const fadeEl = $('fade'); // the journey's dip to paper when a long trip skips ahead
 
-let elapsed = 0, last = performance.now();
+let elapsed = 0, last = performance.now(), lastMore = null;
 flyTo(PRESETS.find((p) => p.key === (params.get('preset') || '2')) || PRESETS[0], 0);
 if (params.has('clean')) { document.body.classList.add('clean'); frame(); }
 if (innerWidth <= 700) setCollapsed(true);
@@ -490,12 +549,19 @@ renderer.setAnimationLoop((now) => {
   talkUI();
   if (fadeEl.style.opacity !== String(journey.state.fade)) fadeEl.style.opacity = journey.state.fade;
   life.update(dt);
+  journey.update(dt);
+  scenes.update(dt, elapsed);
+  critters.update(dt, elapsed, { camera, groundY: (x, z) => data.heightAt(x, z) * world.exag });
   tramway.update(reducedMotion ? 0 : dt);
   watchPerf(dt);
   for (const fn of frameHooks) fn(dt, elapsed);
 
   turnCompass();
-  if (journey.state.playing) { const k = journey.state.step; if (bars[k]) bars[k].style.width = `${journey.state.t * 100}%`; }
+  if (journey.state.playing) {
+    const k = journey.state.step; if (bars[k]) bars[k].style.width = `${journey.state.t * 100}%`;
+    const more = journey.steps[k]?.stops?.some((u) => u > journey.state.t + 0.002);
+    if (more !== lastMore) { lastMore = more; journeyUI(); }
+  }
   labels.update(camera, showLabels, innerWidth, innerHeight);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);

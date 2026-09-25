@@ -94,7 +94,7 @@ export function buildWorld(data, { scene, quality = 'medium', exag = 2.5 }) {
     data.townPaint.flipY = false;
     data.townPaint.colorSpace = THREE.SRGBColorSpace;
     data.townPaint.anisotropy = 8;
-    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, env, { townMasks: data.townMasks, detail: quality !== 'low' }));
+    const townGround = new THREE.Mesh(tg, groundMaterial(data.townPaint, masks, paintExt, env, { townMasks: data.townMasks, townStreets: data.townStreets, detail: quality !== 'low' }));
     townGround.name = 'town-ground';
     ground.add(townGround);
   }
@@ -700,10 +700,10 @@ const GROUND_DETAIL = `
     return col;
   }
 `;
-function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = null, detail = true } = {}) {
+function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = null, townStreets = null, detail = true } = {}) {
   masks.flipY = false;
   masks.colorSpace = THREE.NoColorSpace;
-  if (townMasks) { townMasks.flipY = false; townMasks.colorSpace = THREE.NoColorSpace; }
+  for (const t of [townMasks, townStreets]) if (t) { t.flipY = false; t.colorSpace = THREE.NoColorSpace; t.anisotropy = 8; }
   const m = new THREE.MeshLambertMaterial({ map: paint });
   m.defines = { ...(hole ? { HOLE: 1 } : {}), ...(townMasks ? { TOWN: 1 } : {}), ...(detail ? { DETAIL: 1 } : {}) };
   const fields = FIELD_COLORS.map((c) => new THREE.Color(c));
@@ -713,6 +713,7 @@ function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = 
     shader.uniforms.uPaintExt = { value: paintExt };
     shader.uniforms.uHole = { value: hole ?? new THREE.Vector4() };
     shader.uniforms.uTownMasks = { value: townMasks };
+    shader.uniforms.uTownStreets = { value: townStreets };
     shader.uniforms.uFields = { value: fields };
     shader.uniforms.uHedge = { value: hedge };
     shader.uniforms.uHTex = { value: env.heightTex };
@@ -731,7 +732,7 @@ function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = 
         varying vec3 vWPos; varying vec3 vWN; varying float vH;
         uniform sampler2D uHTex; uniform vec4 uHExt; uniform vec2 uHHalf; uniform float uHighWater; uniform float uTide;
         uniform sampler2D uMasks; uniform vec4 uPaintExt; uniform vec3 uFields[6]; uniform vec3 uHedge;
-        uniform vec4 uHole; uniform sampler2D uTownMasks;
+        uniform vec4 uHole; uniform sampler2D uTownMasks; uniform sampler2D uTownStreets;
         vec2 h22(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
         // distance to the nearest crack between Voronoi cells: blocky, jointed rock
         float cracks(vec2 p) {
@@ -782,9 +783,17 @@ function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = 
         vec3 mk = texture2D(uMasks, (vWPos.xz - uPaintExt.xy) * uPaintExt.zw).rgb;
         float farmland = mk.r;
         #ifdef TOWN
-          vec3 tm = texture2D(uTownMasks, vMapUv).rgb; // street, yard, rock
-          if (tm.r > 0.3 || tm.g > 0.5) farmland = 0.0;
-          mk.g = max(mk.g, tm.b) * (1.0 - tm.r);
+          // the masks hold distances (0.5 on the edge, 8 m from 0 to 1), so edges come out crisp
+          // between the 2.5 m pixels; a little noise keeps them from looking ruled
+          vec3 tm = texture2D(uTownMasks, vMapUv).rgb; // street edge, yard edge, rock
+          vec2 tsx = texture2D(uTownStreets, vMapUv).rg; // metres from the street's middle / 12, half-width / 8
+          float wob = vn(vWPos.xz / 1.8) - 0.5;
+          float inStreet = (tm.r - 0.5) * 8.0 + wob * 0.45; // metres inside the street's edge
+          float inYard = (tm.g - 0.5) * 8.0 + wob * 0.8;
+          float streetA = smoothstep(-0.12, 0.12, inStreet);
+          float yardA = smoothstep(-0.2, 0.2, inYard) * (1.0 - streetA);
+          if (inStreet > -1.0 || inYard > -0.5) farmland = 0.0;
+          mk.g = max(mk.g, tm.b) * (1.0 - streetA);
         #endif
         const float ANG = 0.5;
         // Slowly bent lot boundaries avoid a rigid checkerboard; repeated in the data builder for trees.
@@ -883,6 +892,35 @@ function groundMaterial(paint, masks, paintExt, env, { hole = null, townMasks = 
           fl = mix(fl, fl * vec3(0.7, 0.76, 0.8), wet * 0.85);
           paintCol = mix(paintCol, fl, tidal);
         }
+        #ifdef TOWN
+        {
+          vec2 tp = vWPos.xz;
+          // yards: mown grass, a kitchen garden left as painted, a worn path by the door
+          float garden = step(paintCol.g, paintCol.r * 1.02);
+          vec3 lawn = vec3(0.24, 0.42, 0.13) * (0.88 + 0.24 * vn(tp / 3.0)) * (0.94 + 0.12 * vn(tp / 0.7));
+          paintCol = mix(paintCol, mix(lawn, paintCol, garden * 0.85), yardA * 0.85);
+          // just outside a yard, a darker line of long grass along the fence
+          paintCol *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.7, abs(inYard + 0.35))) * (1.0 - streetA);
+          // the street: packed dirt, two worn wheel tracks each way, a hoof-churned crown and puddles
+          float cd = tsx.r * 12.0, halfW = tsx.g * 8.0;
+          vec3 dirt = vec3(0.47, 0.36, 0.22) * (0.9 + 0.2 * vn(tp / 5.0));
+          float lane = halfW * 0.5; // the middle of each lane
+          float rutW = 0.16 + 0.05 * vn(tp / 3.0);
+          float rut = 0.0;
+          for (int k = -1; k <= 1; k += 2) rut = max(rut, 1.0 - smoothstep(rutW * 0.6, rutW, abs(cd - (lane + float(k) * 0.78))));
+          rut *= smoothstep(0.25, 0.55, vn(tp / 9.0 + 3.0)) * 0.6 + 0.4; // worn deeper in places
+          dirt = mix(dirt, dirt * vec3(0.72, 0.68, 0.64), rut * lod(0.3));
+          float crown = 1.0 - smoothstep(0.3, 0.9, abs(cd - lane)); // between the wheels: hooves and dung
+          dirt = mix(dirt, dirt * (0.85 + 0.25 * vn(tp / 0.25)), crown * lod(0.2) * 0.6);
+          float grassMid = smoothstep(halfW - 0.3, halfW - 1.3, cd) * (1.0 - smoothstep(0.2, 0.8, cd)); // a grass stripe down quiet streets
+          dirt = mix(dirt, vec3(0.3, 0.38, 0.16), grassMid * smoothstep(3.6, 3.2, halfW) * 0.5);
+          float pn = vn(tp / 4.5) * 0.7 + vn(tp / 1.3) * 0.3; // puddles in the ruts after rain
+          float puddle = smoothstep(0.76, 0.79, pn + rut * 0.1) * smoothstep(0.4, 1.0, inStreet);
+          dirt = mix(dirt, dirt * vec3(0.62, 0.66, 0.7) + vec3(0.03, 0.04, 0.05), puddle * 0.85);
+          dirt *= 1.0 - 0.15 * (1.0 - smoothstep(0.0, 0.5, inStreet)); // the edge, trodden and shaded
+          paintCol = mix(paintCol, dirt, streetA);
+        }
+        #endif
         #ifdef DETAIL
           paintCol = mix(paintCol, groundDetail(paintCol, vWPos.xz, crop, inLot, f, mk), 0.75);
         #endif

@@ -611,6 +611,104 @@ const SETTLEMENTS = [
   ['Letete', 45.0587, -66.8915, 950],
   ['Utopia', 45.1480, -66.7712, 450],
 ].map(([name, lat, lon, r]) => ({ name, x: toX(lon), z: toZ(lat), r }));
+
+// ---- Riverview Avenue: the road up the east side of the Magaguadavic, from Main Street to the
+// canal landing. Its line is today's Riverview Avenue, Route 770 and the Canal Road
+// (data/raw/osm-town.json, data/raw/osm-riverview.json); the last stretch along the north bank of
+// the canal to the landing is drawn by eye. A dirt road in 1874, with a few farms along it.
+const RIVERVIEW = (() => {
+  const ways = ['osm-town.json', 'osm-riverview.json'].flatMap((f) => JSON.parse(fs.readFileSync(path.join(ROOT, 'data/raw', f), 'utf8')).elements)
+    .filter((e) => e.type === 'way' && e.geometry && e.tags?.highway).map((e) => ({ name: e.tags.name, pts: toLocal(e.geometry) }));
+  const close = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 3;
+  // follow ways of the given names end to end from `from`, until `until` says stop
+  const chain = (names, from, until) => {
+    const out = [from], used = new Set();
+    for (let guard = 0; guard < 200; guard++) {
+      const end = out[out.length - 1];
+      const w = ways.find((q, k) => !used.has(k) && names.includes(q.name) && (close(q.pts[0], end) || close(q.pts[q.pts.length - 1], end)) && (used.add(k), true));
+      if (!w) break;
+      const pts = close(w.pts[0], end) ? w.pts : [...w.pts].reverse();
+      for (const p of pts.slice(1)) { out.push(p); if (until(p)) return out; }
+    }
+    return out;
+  };
+  const mainEnd = [toX(-66.82021), toZ(45.13197)]; // where Riverview Avenue leaves Main Street
+  const start = ways.filter((w) => w.name === 'Riverview Avenue').flatMap((w) => [w.pts[0], w.pts[w.pts.length - 1]])
+    .reduce((b, p) => (Math.hypot(p[0] - mainEnd[0], p[1] - mainEnd[1]) < Math.hypot(b[0] - mainEnd[0], b[1] - mainEnd[1]) ? p : b));
+  const canalFork = ways.find((w) => w.name === 'Canal Road' && w.pts.length === 12)?.pts[0] ?? [-572, -2403];
+  let pts = chain(['Riverview Avenue', 'Route 770'], start, (p) => p[1] < canalFork[1] + 40);
+  // on up the Canal Road from the fork to the canal, then along its north bank to the landing
+  const canal = chain(['Canal Road'], ways.find((w) => w.name === 'Canal Road' && w.pts.length === 12).pts[0], (p) => p[1] < -3860);
+  const landing = [toX(-66.82477), toZ(45.16275)]; // beside the Bay of Fundy Co.'s canal landing (see structures.quarry)
+  const last = canal[canal.length - 1], spur = [];
+  for (let s = 1; s <= 8; s++) spur.push([mix(last[0], landing[0], s / 8), mix(last[1], landing[1], s / 8) - Math.sin((Math.PI * s) / 8) * 30]);
+  pts = [...pts, ...canal, ...spur];
+  // even spacing, about 12 m
+  const even = [pts[0]];
+  for (let k = 1; k < pts.length; k++) {
+    const a = even[even.length - 1], b = pts[k], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    for (let s = 12; s < d; s += 12) even.push([mix(a[0], b[0], s / d), mix(a[1], b[1], s / d)]);
+    if (d > 0.5) even.push(b);
+  }
+  return { name: 'Riverview Avenue', half: 3, pts: even };
+})();
+const roadSegs = RIVERVIEW.pts.slice(1).map((p, k) => [RIVERVIEW.pts[k], p]);
+const roadBox = RIVERVIEW.pts.reduce((b, [x, z]) => [Math.min(b[0], x - 80), Math.min(b[1], z - 80), Math.max(b[2], x + 80), Math.max(b[3], z + 80)], [Infinity, Infinity, -Infinity, -Infinity]);
+function roadDist(x, z) { // metres from the Riverview road's centre line
+  let best = Infinity;
+  if (x < roadBox[0] || z < roadBox[1] || x > roadBox[2] || z > roadBox[3]) return best;
+  for (const [[x0, z0], [x1, z1]] of roadSegs) {
+    if (Math.min(x0, x1) - 60 > x || Math.max(x0, x1) + 60 < x || Math.min(z0, z1) - 60 > z || Math.max(z0, z1) + 60 < z) continue;
+    const dx = x1 - x0, dz = z1 - z0, f = clamp(((x - x0) * dx + (z - z0) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+    best = Math.min(best, Math.hypot(x - x0 - f * dx, z - z0 - f * dz));
+  }
+  return best;
+}
+// Seven farms spaced along the road outside the town, each set back on the dry side, facing the
+// road; a barn behind three of them. Their clearings are added to the land cover below.
+const ROAD_FARMS = (() => {
+  const out = [];
+  const pts = RIVERVIEW.pts;
+  const lens = [0];
+  for (let k = 1; k < pts.length; k++) lens.push(lens[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const total = lens[lens.length - 1];
+  const dry = (x, z) => {
+    if (!inGrid(x, z)) return false;
+    const c = cellOf(x, z);
+    if (sea[c] || waterId[c] || wet[c] || toM(inlandT.d2[c]) < 25 || toM(seaT.d2[c]) < 25) return false;
+    const r = nearestRiver(x, z);
+    return !(r && r.d < 25) && demSlopeAt(x, z) < 0.16;
+  };
+  // from just outside the town to just short of the canal
+  for (const f of [0.3, 0.39, 0.47, 0.55, 0.64, 0.73, 0.84]) {
+    let placed = null;
+    for (let tries = 0; tries < 24 && !placed; tries++) {
+      const s = total * f + (tries % 6 - 2.5) * 22;
+      const k = Math.max(1, lens.findIndex((L) => L >= s));
+      const [x0, z0] = pts[k - 1], [x1, z1] = pts[k], L = Math.hypot(x1 - x0, z1 - z0) || 1;
+      const tx = (x1 - x0) / L, tz = (z1 - z0) / L, u = (s - lens[k - 1]) / L;
+      const cx = mix(x0, x1, u), cz = mix(z0, z1, u);
+      for (const side of tries < 12 ? [1, -1] : [-1, 1]) {
+        const off = 20 + (tries % 3) * 4;
+        const x = cx - tz * side * off, z = cz + tx * side * off;
+        if (!dry(x, z) || roadDist(x, z) < 16 || out.some((o) => Math.hypot(o.x - x, o.z - z) < 90)) continue;
+        // the house's long side along the road, its door side (local +x) toward it
+        const rot = Math.atan2(tx, tz) + (side > 0 ? 0 : Math.PI);
+        placed = { x, z, rot, side, tx, tz, barn: null };
+        break;
+      }
+    }
+    if (!placed) continue;
+    const n = out.length;
+    if (n === 1 || n === 3 || n === 5) {
+      const bx = placed.x - placed.tz * placed.side * 26, bz = placed.z + placed.tx * placed.side * 26;
+      if (dry(bx, bz)) placed.barn = [bx, bz];
+    }
+    out.push(placed);
+  }
+  return out;
+})();
+for (const f of ROAD_FARMS) SETTLEMENTS.push({ name: 'Riverview farm', x: f.x, z: f.z, r: 260 });
 const magaguadavic = rivers.filter((r) => r.name === 'Magaguadavic River');
 function clearing(x, z) {
   let c = 0;
@@ -728,6 +826,8 @@ for (let j = 0; j < PH; j++) for (let i = 0; i < PW; i++) {
     if (dw < 14) col = lerpC(col, PAL.bank, 0.6);
     if (ds < 26) { col = lerpC(sl > 0.16 ? PAL.shoreRock : PAL.sand, col, smooth(8, 26, ds)); farm *= smooth(10, 30, ds); }
     if (dw < 20) farm *= smooth(8, 20, dw);
+    const rd = roadDist(x, z); // Riverview Avenue: a dirt road (drawn crisp on top by src/world.js)
+    if (rd < 14) { col = lerpC(col, [176, 156, 112], smooth(12, 3, rd) * 0.8); farm *= smooth(4, 12, rd); }
   }
   const p = (j * PW + i) * 4;
   paint.data[p] = col[0]; paint.data[p + 1] = col[1]; paint.data[p + 2] = col[2]; paint.data[p + 3] = 255;
@@ -759,7 +859,7 @@ const townCentre = [toX(-66.8255), toZ(45.1288)];
 // ---- streets of the 1870s town: the ones on Martin's Map 4 and in the local histories.
 // Their lines come from today's map (the old core has kept its streets).
 const OLD_STREETS = { 'Brunswick Street': 5, 'Main Street': 5, 'South Street': 4, 'Wallace Street': 3.5, 'North Street': 3.5,
-  'Portage Street': 3.5, 'Mount Pleasant Road': 3.5, 'Campbell Hill Road': 3.5, 'Pancake Hill Road': 3.5 };
+  'Portage Street': 3.5, 'Mount Pleasant Road': 3.5, 'Campbell Hill Road': 3.5, 'Pancake Hill Road': 3.5, 'Riverview Avenue': 3 };
 const townOsm = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/raw/osm-town.json'), 'utf8')).elements;
 const streets = townOsm.filter((e) => e.type === 'way' && e.tags?.highway && OLD_STREETS[e.tags.name] && e.geometry)
   .map((e) => ({ name: e.tags.name, half: OLD_STREETS[e.tags.name], bridge: !!e.tags.bridge, pts: toLocal(e.geometry) }));
@@ -844,6 +944,36 @@ for (const e of townOsm) {
   if (clearOf(x, z, 18)) addBuilding('church', x, z, 0.35, hash2(Math.round(x), Math.round(z), 3), 20);
 }
 
+// Main Street's shops: false-fronted stores shoulder to shoulder, fronts on a plank sidewalk.
+// (The 1870s business block; the shops are illustrations, not particular firms.)
+const MAIN_WEST = [toX(-66.82519), toZ(45.12956)]; // Main Street's west end, at Portage Street
+const SIDEWALK = 2.6; // the plank sidewalk's width; src/world.js lays it from meta.sidewalks
+const sidewalks = [];
+const shopRow = (s) => s.name === 'Main Street' && !s.bridge;
+for (const s of streets.filter(shopRow)) {
+  let along = 0;
+  for (let k = 0; k + 1 < s.pts.length; k++) {
+    const [x0, z0] = s.pts[k], [x1, z1] = s.pts[k + 1], len = Math.hypot(x1 - x0, z1 - z0);
+    if (len < 1) continue;
+    const tx = (x1 - x0) / len, tz = (z1 - z0) / len;
+    for (let d = (13 - (along % 13)) % 13; d < len; d += 13) {
+      const cx = x0 + tx * d, cz = z0 + tz * d;
+      if (Math.hypot(cx - MAIN_WEST[0], cz - MAIN_WEST[1]) > 290) continue;
+      for (const side of [-1, 1]) {
+        const off = s.half + SIDEWALK + 0.4 + 7;
+        const x = cx - tz * side * off, z = cz + tx * side * off;
+        if (!inTown(x, z, 20) || !buildable(x, z, 0.24) || !clearOf(x, z, 5.5)) continue;
+        if (hash2(Math.round(x), Math.round(z), 60) < 0.18) continue; // the odd gap between shops
+        // a store's gable (its local +z, with the false front) faces the street
+        const face = Math.atan2(tz, -tx) + (side > 0 ? 0 : Math.PI);
+        addBuilding('store', x, z, face, hash2(Math.round(x), Math.round(z), 8), 5.5);
+      }
+    }
+    along += len;
+  }
+  sidewalks.push({ half: s.half, width: SIDEWALK, pts: s.pts.filter(([x, z]) => Math.hypot(x - MAIN_WEST[0], z - MAIN_WEST[1]) < 320) });
+}
+
 // Houses along the old streets: dense in the core between the falls and the Basin, thinning out.
 for (const s of streets) {
   if (s.bridge) continue;
@@ -862,7 +992,9 @@ for (const s of streets) {
         const p = 0.08 + 0.82 * (1 - smooth(300, 1300, fromCentre));
         if (h > p || !inTown(x, z, 20) || !buildable(x, z) || !clearOf(x, z, 9)) continue;
         if (nearestStreet(x, z).d < 7) continue;
-        const along = Math.atan2(tx, tz); // rotation that lines a building's long side up with the street
+        // lined up with the street, turned so its front (door side, local +x; a store's gable end,
+        // local +z) faces the street on either side of it
+        const along = Math.atan2(tx, tz) + (side > 0 ? 0 : Math.PI);
         const kind = fromCentre < 330 && h < 0.25 ? 'store' : h < 0.55 ? 'house' : 'cape';
         addBuilding(kind, x, z, kind === 'store' ? along + Math.PI / 2 : along, hash2(Math.round(x), Math.round(z), 8), 8);
         // a barn behind some of the outer houses
@@ -875,6 +1007,14 @@ for (const s of streets) {
   }
 }
 const townHouses = buildings.length;
+
+// the farms along Riverview Avenue (placed before the villages and farmsteads, which keep clear of them)
+const roadFarms = [];
+for (const f of ROAD_FARMS) {
+  addBuilding(roadFarms.length % 2 ? 'house' : 'cape', f.x, f.z, f.rot, hash2(Math.round(f.x), Math.round(f.z), 61), 14);
+  roadFarms.push({ x: Math.round(f.x * 10) / 10, z: Math.round(f.z * 10) / 10, rot: Math.round(f.rot * 1000) / 1000, barn: f.barn?.map((v) => Math.round(v * 10) / 10) ?? null });
+  if (f.barn) addBuilding('barn', f.barn[0], f.barn[1], f.rot, hash2(Math.round(f.barn[0]), 2, 62), 12);
+}
 
 // Villages: a handful of houses and barns at each settlement of the 1870s.
 for (const st of SETTLEMENTS) {
@@ -900,7 +1040,7 @@ for (let j = 0; j < PH; j += 8) for (let i = 0; i < PW; i += 8) {
   const rot = -0.5 + (hash2(i, j, 42) < 0.5 ? 0 : Math.PI / 2);
   addBuilding(hash2(i, j, 43) < 0.5 ? 'cape' : 'house', x, z, rot, hash2(i, j, 44), 9);
   const bx = x + Math.cos(rot) * 24, bz = z - Math.sin(rot) * 24;
-  if (buildable(bx, bz, 0.14)) addBuilding('barn', bx, bz, rot, hash2(i, j, 45), 10);
+  if (buildable(bx, bz, 0.14) && clearOf(bx, bz, 10)) addBuilding('barn', bx, bz, rot, hash2(i, j, 45), 10);
 }
 log(`buildings: ${buildings.length} (${townHouses} in town, incl. churches)`);
 
@@ -915,6 +1055,41 @@ for (let j = 0; j < TOWN.h; j++) for (let i = 0; i < TOWN.w; i++) {
   if (sea[c] || toM(seaT.d2[c]) < TOWN_CELL || (g && g.d < GORGE_HALF + 5)) townWater[j * TOWN.w + i] = SEA;
   else if (toM(inlandT.d2[c]) <= TOWN_CELL * 1.05) townWater[j * TOWN.w + i] = waterSurfF[inlandT.near[c]];
 }
+// Level ground for the town: Main Street's shop row is flat across the street (it still climbs
+// along it), and every town building stands on a level pad. A metre here or there, no more.
+{
+  const src = Float32Array.from(townHeight);
+  const sample = (x, z) => {
+    const u = clamp((x - TOWN.x0) / TOWN_CELL, 0, TOWN.w - 1.001), v = clamp((z - TOWN.z0) / TOWN_CELL, 0, TOWN.h - 1.001);
+    const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * TOWN.w + i;
+    return mix(mix(src[k], src[k + 1], a), mix(src[k + TOWN.w], src[k + TOWN.w + 1], a), b);
+  };
+  const mainSegs = streets.filter((st) => st.name === 'Main Street' && !st.bridge).flatMap((st) => st.pts.slice(1).map((p, k) => [st.pts[k], p, st.half]));
+  const LIMIT = 1.2; // metres: the most any point is raised or lowered
+  for (let j = 0; j < TOWN.h; j++) for (let i = 0; i < TOWN.w; i++) {
+    const x = TOWN.x0 + i * TOWN_CELL, z = TOWN.z0 + j * TOWN_CELL, k = j * TOWN.w + i;
+    if (!Number.isNaN(townWater[k]) || Math.min(x - TOWN.x0, TOWN.x1 - x, z - TOWN.z0, TOWN.z1 - z) < 60) continue; // the rim must meet the 30 m ground
+    let target = null, w = 0;
+    if (Math.hypot(x - MAIN_WEST[0], z - MAIN_WEST[1]) < 470) {
+      for (const [[x0, z0], [x1, z1], half] of mainSegs) {
+        const dx = x1 - x0, dz = z1 - z0, f = clamp(((x - x0) * dx + (z - z0) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+        const d = Math.hypot(x - x0 - f * dx, z - z0 - f * dz), ww = 1 - smooth(half + SIDEWALK + 14, half + SIDEWALK + 26, d);
+        if (ww > w) { w = ww; target = sample(x0 + f * dx, z0 + f * dz); }
+      }
+    }
+    for (const [kind, bx, bz, rot] of buildings) {
+      if (Math.abs(x - bx) > 30 || Math.abs(z - bz) > 30 || !inTown(bx, bz)) continue;
+      const [hw, hd] = { house: [4, 5.3], cape: [4.3, 3.8], store: [4.5, 7], barn: [5.3, 8], church: [5.5, 13] }[kind] ?? [5, 5];
+      const lx = (x - bx) * Math.cos(rot) - (z - bz) * Math.sin(rot), lz = (x - bx) * Math.sin(rot) + (z - bz) * Math.cos(rot);
+      const out = Math.max(Math.abs(lx) - hw, Math.abs(lz) - hd, 0);
+      const ww = 1 - smooth(4, 14, out);
+      if (ww > w) { w = ww; target = sample(bx, bz); }
+    }
+    if (target === null || w <= 0) continue;
+    const h = src[k];
+    townHeight[k] = h + clamp(target - h, -LIMIT, LIMIT) * w;
+  }
+}
 function townHeightAt(x, z) {
   const u = clamp((x - TOWN.x0) / TOWN_CELL, 0, TOWN.w - 1.001), v = clamp((z - TOWN.z0) / TOWN_CELL, 0, TOWN.h - 1.001);
   const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * TOWN.w + i;
@@ -922,9 +1097,23 @@ function townHeightAt(x, z) {
 }
 const surfaceAt = (x, z) => (inTown(x, z) ? townHeightAt(x, z) : heightAt(x, z));
 
-// ---- the inset's paint (2.5 m) and masks: R = street, G = yard, B = rock
+// ---- the inset's paint (2.5 m) and masks. The masks hold DISTANCES, so the ground shader can cut
+// crisp edges between the 2.5 m pixels: town-masks R = street edge, G = yard edge (both 0.5 on the
+// edge, 1 inside, 0 outside, over +-4 m), B = rock; town-streets R = metres from the street's
+// centre line / 12, G = the street's half-width / 8 (for the wheel ruts).
+function streetCentre(x, z) {
+  let best = Infinity, half = 4;
+  for (const [[x0, z0], [x1, z1], h] of streetSegs) {
+    if (Math.min(x0, x1) - 40 > x || Math.max(x0, x1) + 40 < x || Math.min(z0, z1) - 40 > z || Math.max(z0, z1) + 40 < z) continue;
+    const dx = x1 - x0, dz = z1 - z0, L2 = dx * dx + dz * dz || 1, f = clamp(((x - x0) * dx + (z - z0) * dz) / L2, 0, 1);
+    const d = Math.hypot(x - x0 - f * dx, z - z0 - f * dz);
+    if (d - h < best - half) { best = d; half = h; }
+  }
+  return { d: best, half };
+}
+const sdf = (d) => Math.round(clamp(0.5 - d / 8, 0, 1) * 255);
 {
-  const tp = new PNG({ width: TOWN.pw, height: TOWN.ph }), tm = new PNG({ width: TOWN.pw, height: TOWN.ph });
+  const tp = new PNG({ width: TOWN.pw, height: TOWN.ph }), tm = new PNG({ width: TOWN.pw, height: TOWN.ph }), ts = new PNG({ width: TOWN.pw, height: TOWN.ph });
   const mainPaint = (x, z) => {
     const u = clamp((x - XMIN) / PAINT - 0.5, 0, PW - 1.001), v = clamp((z - ZMIN) / PAINT - 0.5, 0, PH - 1.001);
     const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j;
@@ -935,13 +1124,14 @@ const surfaceAt = (x, z) => (inTown(x, z) ? townHeightAt(x, z) : heightAt(x, z))
   const DIRT = [184, 158, 110], DIRT_EDGE = [150, 128, 88], YARD = [150, 192, 100], GARDEN = [128, 100, 70], ROCK = [150, 122, 112];
   for (let j = 0; j < TOWN.ph; j++) for (let i = 0; i < TOWN.pw; i++) {
     const x = TOWN.x0 + (i + 0.5) * TOWN_PAINT, z = TOWN.z0 + (j + 0.5) * TOWN_PAINT, c = cellOf(x, z);
-    let col = mainPaint(x, z), road = 0, yard = 0, rock = 0;
+    let col = mainPaint(x, z), road = 0, yard = 0, rock = 0, yardD = 99;
     if (!sea[c] && !waterId[c]) {
       for (const [kind, bx, bz, rot] of townBuild) {
         const dx = x - bx, dz = z - bz;
-        if (Math.abs(dx) > 26 || Math.abs(dz) > 26) continue;
+        if (Math.abs(dx) > 32 || Math.abs(dz) > 32) continue;
         const lx = dx * Math.cos(rot) - dz * Math.sin(rot), lz = dx * Math.sin(rot) + dz * Math.cos(rot);
-        const r = kind === 'church' ? 22 : kind === 'barn' ? 14 : 16;
+        const r = kind === 'church' ? 22 : kind === 'barn' ? 14 : kind === 'store' ? 12 : 16;
+        yardD = Math.min(yardD, Math.max(Math.abs(lx) - r, Math.abs(lz) - r));
         if (Math.abs(lx) < r && Math.abs(lz) < r) {
           yard = 1;
           // a kitchen garden in the back corner of some lots
@@ -956,8 +1146,11 @@ const surfaceAt = (x, z) => (inTown(x, z) ? townHeightAt(x, z) : heightAt(x, z))
     if (st.d < 1.5) { road = smooth(1.5, 0, st.d); col = lerpC(col, st.d > 0 ? DIRT_EDGE : DIRT, road); }
     const p = (j * TOWN.pw + i) * 4;
     tp.data[p] = col[0]; tp.data[p + 1] = col[1]; tp.data[p + 2] = col[2]; tp.data[p + 3] = 255;
-    tm.data[p] = road * 255; tm.data[p + 1] = yard * 255; tm.data[p + 2] = rock * 255; tm.data[p + 3] = 255;
+    const sc = streetCentre(x, z);
+    tm.data[p] = sea[c] || waterId[c] ? 0 : sdf(sc.d - sc.half); tm.data[p + 1] = sdf(yardD); tm.data[p + 2] = rock * 255; tm.data[p + 3] = 255;
+    ts.data[p] = Math.round(clamp(sc.d / 12, 0, 1) * 255); ts.data[p + 1] = Math.round(clamp(sc.half / 8, 0, 1) * 255); ts.data[p + 2] = 0; ts.data[p + 3] = 255;
   }
+  fs.writeFileSync(path.join(OUT, 'town-streets.png'), PNG.sync.write(ts));
   fs.writeFileSync(path.join(OUT, 'town-paint.png'), PNG.sync.write(tp));
   fs.writeFileSync(path.join(OUT, 'town-masks.png'), PNG.sync.write(tm));
   fs.writeFileSync(path.join(OUT, 'town-height.bin'), Buffer.from(townHeight.buffer));
@@ -1028,6 +1221,7 @@ for (let j = 0; j * TREE_SPACING < ZMAX - ZMIN; j++) for (let i = 0; i * TREE_SP
   const gz = gorgeAt(x, z);
   if (gz && gz.d < GORGE_HALF + 4) continue;
   if (inTown(x, z) && nearestStreet(x, z).d < 5) continue;
+  if (roadDist(x, z) < 9) continue; // Riverview Avenue
   const pi = clamp(Math.floor((x - XMIN) / PAINT), 0, PW - 1), pj = clamp(Math.floor((z - ZMIN) / PAINT), 0, PH - 1);
   const clear = coverClear[pj * PW + pi], sl = demSlopeAt(x, z), roll = hash2(i, j, 33);
   const g = ledges(x, z, graniteBelt(x, z), sl) > 0.5;
@@ -1178,6 +1372,9 @@ const meta = {
   gorge: gorge.filter((_, k) => k % 2 === 0 || k === gorge.length - 1).map(([x, z, t]) => [round(x), round(z), round(gorgeSurf(t), 2)]),
   structures: JSON.parse(JSON.stringify(structures, (k, v) => (typeof v === 'number' ? round(v, 3) : v))),
   streets: streets.map((s) => ({ name: s.name, half: s.half, bridge: s.bridge, pts: s.pts.map(([x, z]) => [round(x), round(z)]) })),
+  sidewalks: sidewalks.map((w) => ({ ...w, pts: w.pts.map(([x, z]) => [round(x), round(z)]) })),
+  roads: [{ name: RIVERVIEW.name, half: RIVERVIEW.half, pts: RIVERVIEW.pts.map(([x, z]) => [round(x), round(z)]) }],
+  roadFarms,
   buildings,
 };
 fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify(meta));

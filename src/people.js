@@ -74,6 +74,12 @@ const TOOLS = {
   reins: () => bx(0.5, 0.02, 0.8, 0, -0.05, 0.4, '#3b2a1c', true),
   axe: () => merge([cy(0.022, 0.022, 0.8, 0, -0.8, 0.02, WOOD, true, 5), bx(0.04, 0.16, 0.24, 0, -0.9, 0.1, IRON, true)]),
   cloth: () => bx(0.5, 0.6, 0.03, 0, -0.1, 0.15, '#f2efe6', true),
+  // a scythe: the long snath held across the body, the blade near the ground
+  scythe: () => merge([cy(0.02, 0.02, 1.7, 0, -1.2, 0.3, WOOD, true, 5).rotateX(0.5), bx(0.04, 0.03, 0.8, 0.35, -1.75, 0.95, IRON, true).rotateY(-0.6)]),
+  // a salmon dip net: a pole, a hoop and a bag
+  net: () => merge([cy(0.02, 0.02, 2.2, 0, -1.9, 0, WOOD, true, 5), paint(new THREE.TorusGeometry(0.3, 0.015, 4, 12).rotateX(Math.PI / 2).translate(0, -3.0, 0.25), IRON, true),
+    paint(new THREE.ConeGeometry(0.29, 0.5, 8, 1, true).rotateX(Math.PI).translate(0, -3.25, 0.25), '#d9d0b8', true)]),
+  paddle: () => merge([cy(0.02, 0.02, 1.3, 0, -1.0, 0, WOOD, true, 5), bx(0.03, 0.5, 0.15, 0, -1.55, 0, WOOD, true)]),
 };
 
 // Horse: 1.6 m at the withers, facing +z. Legs pivot under the body.
@@ -300,6 +306,33 @@ export const ACTIONS = {
     ACTIONS.walk(p, t, f);
     p.armLp = 0.55; p.armRp = 0.75; p.armRr = 0.15;
     p.tool = { x: 0.22, y: 1.2, z: 0.1, rx: 1.4, ry: -0.3 * (f.poleOut ?? 0), root: true }; // trailing out over the side
+  },
+  mow(p, t, f) { // swinging a scythe: a slow sweep from right to left, a step forward each stroke
+    const u = (t * 0.55 + f.seed) % 1, sw = Math.sin(u * TAU);
+    p.twist = 0.7 * sw; p.lean = 0.25; p.armLp = 0.9; p.armRp = 0.7; p.armLr = -0.25; p.armRr = 0.3;
+    p.legL = 0.25; p.legR = -0.2; p.kneeL = 0.3; p.kneeR = 0.15; p.headPitch = 0.3;
+  },
+  paddle(p, t, f) { // kneeling in a canoe, paddling on one side
+    const s = Math.sin(TAU * 0.6 * t + f.seed * 5);
+    p.drop = 0.5; p.legL = p.legR = 1.4; p.kneeL = p.kneeR = 1.9; p.lean = 0.15 + 0.15 * s;
+    p.armLp = 1.1 + 0.5 * s; p.armRp = 0.6 + 0.5 * s; p.armLr = -0.1; p.armRr = 0.35;
+    p.tool = { x: 0.35, y: 1.0 + 0.2 * s, z: 0.25 - 0.3 * s, rx: 0.3 - 0.5 * s, root: true };
+  },
+  swim(p, t, f) { // treading water: only the head and shoulders above it
+    const s = Math.sin(TAU * 0.9 * t + f.seed * 4);
+    p.drop = 1.35; p.lean = 0.3; p.armLp = 1.4 + 0.5 * s; p.armRp = 1.4 - 0.5 * s; p.armLr = -0.6; p.armRr = 0.6;
+    p.legL = 0.4 * s; p.legR = -0.4 * s; p.bob = 0.04 * s;
+  },
+  laugh(p, t, f) { // doubled over laughing
+    const s = Math.sin(t * 14);
+    p.lean = 0.35 + 0.05 * s; p.bob = 0.02 * s; p.armLp = 0.5; p.armRp = 0.5; p.armLr = -0.5; p.armRr = 0.5; p.headPitch = -0.2 + 0.08 * s;
+  },
+  duck(p, t, f) { // ducking under something swung at his head
+    p.drop = 0.35; p.legL = p.legR = 0.6; p.kneeL = p.kneeR = 1.2; p.lean = 0.7; p.armLp = p.armRp = 2.6; p.armLr = -0.5; p.armRr = 0.5; p.headPitch = 0.5;
+  },
+  shake(p, t, f) { // shaking a fist
+    ACTIONS.idle(p, t, f);
+    p.armRp = 2.3 + 0.25 * Math.sin(t * 16); p.armRr = 0.2; p.lean = -0.05;
   },
   lead(p, t, f) { // walking at a horse's head
     ACTIONS.walk(p, t, f);
