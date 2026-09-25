@@ -320,15 +320,17 @@ export function buildStructures(data, { exag, groundY, toon }) {
       box(12, 6, L * 0.55, -W / 2 - 6, 0, L * 0.12, '#978e82'), gableRoof(12, L * 0.55, 6, 3, roof, 0.5).translate(-W / 2 - 6, 0, L * 0.12),
       gableEnds(12, L * 0.55, 6, 3, '#978e82').translate(-W / 2 - 6, 0, L * 0.12),
       windows(W, L, [2, 5.6], '#34414d', false), windows(12, L * 0.55, [2], '#34414d', false).translate(-W / 2 - 6, 0, L * 0.12),
-      box(4.5, 4.5, 0.3, 0, 0, L / 2 + 0.05, '#4a3326'), // big doors at both ends: rough stone in at the west,
-      box(4.5, 4.5, 0.3, 0, 0, -L / 2 - 0.05, '#4a3326'), // finished work out at the east
+      box(4.5, 4.5, 0.3, 0, 0, L / 2 + 0.05, '#4a3326'), // big doors: finished work out at the east end,
+      box(4.5, 4.5, 0.3, 0, 0, -L / 2 - 0.05, '#4a3326'), // the wheel house at the west,
+      box(0.3, 4.5, 4.8, W / 2 + 0.05, 0, S.mill.door ?? -20, '#4a3326'), // and rough stone in at the north side, off the lane
       // yard stock: rough blocks and finished columns
       box(3, 1.8, 2, W / 2 + 6, 0, L / 2 - 6, '#b3503c'), box(2.4, 1.6, 2.6, W / 2 + 6.5, 0, L / 2 - 11, '#a8483a'), box(2, 1.2, 2, W / 2 + 5.5, 1.8, L / 2 - 6, '#c0604a'),
       tint(new THREE.CylinderGeometry(0.55, 0.55, 7, 10).rotateX(Math.PI / 2).translate(W / 2 + 10, 0.6, L / 2 - 20), '#c4574a'),
       tint(new THREE.CylinderGeometry(0.55, 0.55, 7, 10).rotateX(Math.PI / 2).translate(W / 2 + 11.4, 0.6, L / 2 - 20), '#c4574a'),
     ]);
     // the mill's long axis runs along its local z
-    add(geo, x, baseY(x, z, rot, W, L), z, rot, 'Bay of Fundy mill');
+    // on its levelled pad (build-terrain.mjs grades the yard to S.mill.level)
+    add(geo, x, S.mill.level !== undefined ? S.mill.level * exag : baseY(x, z, rot, W, L), z, rot, 'Bay of Fundy mill');
   }
 
   // ---- the dam across the river below the upper bridge, and the flume to the mill wheel
@@ -564,6 +566,18 @@ function townDressing(data, { group, exag, toon, mat, baseY }) {
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), P = new THREE.Vector3();
   const place = (geo, x, y, z, rot) => geo.applyMatrix4(M4.compose(P.set(x, y, z), Q.setFromAxisAngle(Y, rot), ONE));
 
+  // metres from the nearest street's edge (negative: out in the street), leaving out one street by name
+  const streetSegs = [...(meta.streets ?? []).filter((st) => !st.bridge), ...(meta.roads ?? [])].flatMap((st) => st.pts.slice(1).map((p, k) => [st.pts[k], p, st.half, st.name]));
+  const streetEdge = (x, z, skip = null) => {
+    let best = Infinity;
+    for (const [[x0, z0], [x1, z1], h, name] of streetSegs) {
+      if (name === skip || Math.min(x0, x1) - 40 > x || Math.max(x0, x1) + 40 < x || Math.min(z0, z1) - 40 > z || Math.max(z0, z1) + 40 < z) continue;
+      const dx = x1 - x0, dz = z1 - z0, f = Math.min(Math.max(((x - x0) * dx + (z - z0) * dz) / (dx * dx + dz * dz || 1), 0), 1);
+      best = Math.min(best, Math.hypot(x - x0 - f * dx, z - z0 - f * dz) - h);
+    }
+    return best;
+  };
+
   // ---- the plank sidewalk along Main Street's shops, both sides, on low sleepers
   const walkParts = [], edgeParts = [];
   for (const w of meta.sidewalks ?? []) {
@@ -576,6 +590,7 @@ function townDressing(data, { group, exag, toon, mat, baseY }) {
         const a = (q / n) * L, b = ((q + 1) / n) * L, m = (a + b) / 2, len = b - a + 0.02;
         const off = w.half + 0.25 + w.width / 2;
         const cx = x0 + tx * m - tz * side * off, cz = z0 + tz * m + tx * side * off;
+        if (streetEdge(cx, cz, 'Main Street') < w.width / 2 + 0.3) continue; // not across the mouth of a side street
         const y = gy(cx, cz) + 0.28;
         const rot = Math.atan2(tx, tz);
         const deck = new THREE.BoxGeometry(w.width, 0.12, len);
@@ -608,14 +623,16 @@ function townDressing(data, { group, exag, toon, mat, baseY }) {
     for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - (trade + 1 - uv.getY(i)) / TRADES.length);
     signParts.push(place(sg, x, y, z, rot));
     const parts = [box(1.3, 2.4, 0.18, 0, 0.1, 7.1, '#4a3326'), box(1.5, 0.15, 0.25, 0, 2.5, 7.12, '#e8e0cb')];
-    if (v < 0.6) { // a shed roof over the sidewalk on two posts
+    // nothing out in a side street round the corner (the street a shop faces has its sidewalk and rail)
+    const clear = (lx, lz) => streetEdge(x + lx * Math.cos(rot) + lz * Math.sin(rot), z - lx * Math.sin(rot) + lz * Math.cos(rot), 'Main Street') > 0.5;
+    if (v < 0.6 && clear(-4.3, 9.9) && clear(4.3, 9.9)) { // a shed roof over the sidewalk on two posts
       parts.push(tint(new THREE.BoxGeometry(8.6, 0.16, 3.1).rotateX(-0.16).translate(0, 3.3, 7.1 + 1.55), ['#5b665a', '#6b4a2e', '#7a3b2e', '#4d4a48'][k % 4]));
       for (const sx of [-4, 4]) parts.push(box(0.16, 3.1, 0.16, sx, 0, 9.9, '#e5dbc5'));
     }
-    if (v > 0.25) { // barrels and a crate by the door
+    if (v > 0.25 && clear(2.6, 7.9) && clear(-2.4, 7.9)) { // barrels and a crate by the door
       parts.push(cyl(0.32, 0.36, 0.85, 2.2, 0.2, 7.8, '#8a6a48', 10), cyl(0.32, 0.36, 0.85, 2.95, 0.2, 7.9, '#7a5a3c', 10), box(0.7, 0.55, 0.6, -2.4, 0.2, 7.9, '#a08058'));
     }
-    if (k % 3 === 0) { // a hitching rail at the kerb
+    if (k % 3 === 0 && clear(-1.8, 11.2) && clear(1.8, 11.2)) { // a hitching rail at the kerb
       parts.push(box(0.14, 1.0, 0.14, -1.8, -0.2, 11.2, '#5b4330'), box(0.14, 1.0, 0.14, 1.8, -0.2, 11.2, '#5b4330'), box(3.8, 0.1, 0.1, 0, 0.7, 11.2, '#5b4330'));
     }
     front.push(place(merge(parts), x, y, z, rot));
@@ -629,16 +646,6 @@ function townDressing(data, { group, exag, toon, mat, baseY }) {
   }
 
   // ---- picket fences across the fronts of about half the town's houses, with a gate gap
-  const streetSegs = (meta.streets ?? []).filter((st) => !st.bridge).flatMap((st) => st.pts.slice(1).map((p, k) => [st.pts[k], p, st.half]));
-  const streetEdge = (x, z) => {
-    let best = Infinity;
-    for (const [[x0, z0], [x1, z1], h] of streetSegs) {
-      if (Math.min(x0, x1) - 40 > x || Math.max(x0, x1) + 40 < x || Math.min(z0, z1) - 40 > z || Math.max(z0, z1) + 40 < z) continue;
-      const dx = x1 - x0, dz = z1 - z0, f = Math.min(Math.max(((x - x0) * dx + (z - z0) * dz) / (dx * dx + dz * dz || 1), 0), 1);
-      best = Math.min(best, Math.hypot(x - x0 - f * dx, z - z0 - f * dz) - h);
-    }
-    return best;
-  };
   const fence = [];
   const homes = meta.buildings.filter(([k, x, z]) => (k === 'house' || k === 'cape') && data.inTown(x, z));
   homes.forEach(([, x, z, rot, v]) => {
@@ -652,6 +659,9 @@ function townDressing(data, { group, exag, toon, mat, baseY }) {
       for (let s0 = a; s0 < b - 0.01; s0 += 2) {
         const s1 = Math.min(b, s0 + 2);
         const p0 = [x + ox * lx + ax * s0, z + oz * lx + az * s0], p1 = [x + ox * lx + ax * s1, z + oz * lx + az * s1];
+        // the house is checked against the street at its middle, but a street that bends or a corner
+        // lot can bring the fence's ends out into it: leave out any panel that isn't clear of every street
+        if (Math.min(streetEdge(...p0), streetEdge(...p1), streetEdge((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)) < 1) continue;
         const y0 = gy(...p0), y1 = gy(...p1), u0 = s0 / 2, u1 = s1 / 2;
         fence.push([p0[0], y0, p0[1], u0, 0], [p1[0], y1, p1[1], u1, 0], [p1[0], y1 + 1.1, p1[1], u1, 1],
           [p0[0], y0, p0[1], u0, 0], [p1[0], y1 + 1.1, p1[1], u1, 1], [p0[0], y0 + 1.1, p0[1], u0, 1]);
@@ -816,15 +826,15 @@ export function makeProps(toon) {
       g.computeVertexNormals();
       return tint(g.translate(x, 0, 0), '#f3ecd8');
     };
-    const jib = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 4, 14.5, 0, 4, 5.8, 0, 20, 5.8], 3)); g.computeVertexNormals(); return tint(g, '#f3ecd8'); })();
+    const jib = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 3.8, 19.5, 0, 4, 7.5, 0, 20, 5.8], 3)); g.computeVertexNormals(); return tint(g, '#f3ecd8'); })();
     const g = merge([tint(hullGeo, '#23302b'), tint(stripe, '#e8dfc8'), box(6, 0.3, 25, 0, 2.1, 1.5, '#9a7a55'),
-      cyl(0.25, 0.32, 22, 0, 2, 5.5, '#6b4a2e', 6), cyl(0.25, 0.32, 24, 0, 2, -4.5, '#6b4a2e', 6), cyl(0.12, 0.18, 9, 0, 0, 0, '#6b4a2e', 5).rotateX(1.35).translate(0, 5.4, 15.5),
+      cyl(0.25, 0.32, 22, 0, 2, 5.5, '#6b4a2e', 6), cyl(0.25, 0.32, 24, 0, 2, -4.5, '#6b4a2e', 6), cyl(0.12, 0.2, 9, 0, 0, 0, '#6b4a2e', 5).rotateX(1.35).translate(0, 2.2, 12.2), // the bowsprit: out from the stem at deck height
       box(2.4, 1.6, 3.6, 0, 2.3, -8.5, '#7a5a3c')]);
     // Sails set, or furled along their booms (as at a wharf, loading). userData.setSails(on) swaps them.
     const set = merge([sail(9, 16, 0.1, 4, 5.3), sail(11, 18, 0.1, 4, -4.7), jib]);
     const furled = merge([cyl(0.38, 0.38, 9, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 4.35, 5.3 - 4.5),
       cyl(0.42, 0.42, 11, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 4.35, -4.7 - 5.5),
-      cyl(0.3, 0.3, 8.5, 0, 0, 0, '#e6dcc2', 8).rotateX(Math.PI / 2).translate(0, 3.6, 10.2)]);
+      cyl(0.26, 0.26, 5, 0, 0, 0, '#e6dcc2', 8).rotateX(1.35).translate(0, 3.2, 15.1)]); // the jib, furled along the bowsprit
     const hullMesh = mesh(g, 'schooner hull');
     const sailMat = mat.clone(); sailMat.side = THREE.DoubleSide; // the sails need both faces
     const sails = new THREE.Mesh(set, sailMat); sails.name = 'sails';

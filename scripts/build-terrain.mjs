@@ -889,6 +889,18 @@ const buildable = (x, z, slopeMax = 0.2) => {
   if (r && r.d < 10) return false;
   return demSlopeAt(x, z) < slopeMax;
 };
+// half width (local x) and half depth (local z) of each kind of building, in metres
+const FOOTPRINT = { house: [4, 5.3], cape: [4.3, 3.8], store: [4.5, 7], barn: [5.3, 8], church: [5.5, 13] };
+// true when a building's walls stand at least `margin` metres clear of every street (a centre
+// point clear of one street can still put a corner out into the next one round the corner)
+function offStreets(kind, x, z, rot, margin = 1) {
+  const [hw, hd] = FOOTPRINT[kind] ?? [5, 5], c = Math.cos(rot), s = Math.sin(rot);
+  for (let a = -hw; a <= hw + 0.01; a += hw / Math.ceil(hw / 3)) for (let b = -hd; b <= hd + 0.01; b += hd / Math.ceil(hd / 3)) {
+    if (Math.abs(a) < hw - 0.01 && Math.abs(b) < hd - 0.01) continue; // the walls only
+    if (nearestStreet(x + a * c + b * s, z - a * s + b * c).d < margin) return false;
+  }
+  return true;
+}
 function addBuilding(kind, x, z, rot, variant, r) {
   buildings.push([kind, Math.round(x * 10) / 10, Math.round(z * 10) / 10, Math.round(rot * 1000) / 1000, Math.round(variant * 100) / 100]);
   taken.push([x, z, r]);
@@ -940,8 +952,13 @@ const structures = {};
 for (const e of townOsm) {
   if (e.tags?.amenity !== 'place_of_worship' || !/Baptist|Catholic|United/.test(e.tags.name || '')) continue;
   const lat = e.lat ?? e.center?.lat ?? e.geometry?.[0]?.lat, lon = e.lon ?? e.center?.lon ?? e.geometry?.[0]?.lon;
-  const [x, z] = at(lat, lon);
-  if (clearOf(x, z, 18)) addBuilding('church', x, z, 0.35, hash2(Math.round(x), Math.round(z), 3), 20);
+  let [x, z] = at(lat, lon);
+  // today's site can put the old church's walls out into the street: step it back until clear
+  for (let k = 0; k < 16 && !offStreets('church', x, z, 0.35, 1.5); k++) {
+    const e = 0.5, g = [nearestStreet(x + e, z).d - nearestStreet(x - e, z).d, nearestStreet(x, z + e).d - nearestStreet(x, z - e).d], l = Math.hypot(...g) || 1;
+    x += (g[0] / l); z += (g[1] / l);
+  }
+  if (clearOf(x, z, 18) && offStreets('church', x, z, 0.35, 1.5)) addBuilding('church', x, z, 0.35, hash2(Math.round(x), Math.round(z), 3), 20);
 }
 
 // Main Street's shops: false-fronted stores shoulder to shoulder, fronts on a plank sidewalk.
@@ -966,6 +983,7 @@ for (const s of streets.filter(shopRow)) {
         if (hash2(Math.round(x), Math.round(z), 60) < 0.18) continue; // the odd gap between shops
         // a store's gable (its local +z, with the false front) faces the street
         const face = Math.atan2(tz, -tx) + (side > 0 ? 0 : Math.PI);
+        if (!offStreets('store', x, z, face, 1.5)) continue; // a corner lot: its side would stand in the cross street
         addBuilding('store', x, z, face, hash2(Math.round(x), Math.round(z), 8), 5.5);
       }
     }
@@ -996,7 +1014,9 @@ for (const s of streets) {
         // local +z) faces the street on either side of it
         const along = Math.atan2(tx, tz) + (side > 0 ? 0 : Math.PI);
         const kind = fromCentre < 330 && h < 0.25 ? 'store' : h < 0.55 ? 'house' : 'cape';
-        addBuilding(kind, x, z, kind === 'store' ? along + Math.PI / 2 : along, hash2(Math.round(x), Math.round(z), 8), 8);
+        const rot = kind === 'store' ? along + Math.PI / 2 : along;
+        if (!offStreets(kind, x, z, rot)) continue;
+        addBuilding(kind, x, z, rot, hash2(Math.round(x), Math.round(z), 8), 8);
         // a barn behind some of the outer houses
         const bxb = x - tz * side * 24, bzb = z + tx * side * 24;
         if (fromCentre > 450 && hash2(Math.round(x), Math.round(z), 9) < 0.45 && buildable(bxb, bzb) && clearOf(bxb, bzb, 10) && nearestStreet(bxb, bzb).d > 8)
@@ -1090,6 +1110,204 @@ for (let j = 0; j < TOWN.h; j++) for (let i = 0; i < TOWN.w; i++) {
     townHeight[k] = h + clamp(target - h, -LIMIT, LIMIT) * w;
   }
 }
+
+// ---- the cart road from the mill yard down to the main wharf, along the old streets
+const cartPath = (() => {
+  const nodes = [], edges = new Map();
+  const nodeOf = ([x, z]) => {
+    let k = nodes.findIndex(([nx, nz]) => Math.hypot(nx - x, nz - z) < 4);
+    if (k < 0) { k = nodes.push([x, z]) - 1; edges.set(k, []); }
+    return k;
+  };
+  for (const st of streets) for (let k = 0; k + 1 < st.pts.length; k++) {
+    const a = nodeOf(st.pts[k]), b = nodeOf(st.pts[k + 1]);
+    const d = Math.hypot(nodes[a][0] - nodes[b][0], nodes[a][1] - nodes[b][1]);
+    edges.get(a).push([b, d]); edges.get(b).push([a, d]);
+  }
+  const m = structures.mill, w = structures.wharf;
+  const millYard = [m.x + Math.sin((63 * Math.PI) / 180) * 50, m.z - Math.cos((63 * Math.PI) / 180) * 50]; // the east end
+  const wharfRoot = [w.x, w.z];
+  const wharfEnd = [w.x + Math.sin(w.rot) * (w.length * 0.8), w.z + Math.cos(w.rot) * (w.length * 0.8)];
+  const nearest = ([x, z]) => nodes.reduce((b, n, k) => (Math.hypot(n[0] - x, n[1] - z) < Math.hypot(nodes[b][0] - x, nodes[b][1] - z) ? k : b), 0);
+  const s0 = nearest(millYard), s1 = nearest(wharfRoot);
+  const dist = new Map([[s0, 0]]), prev = new Map(), open = new Set([s0]);
+  while (open.size) {
+    let c = null;
+    for (const o of open) if (c === null || dist.get(o) < dist.get(c)) c = o;
+    open.delete(c);
+    if (c === s1) break;
+    for (const [n, d] of edges.get(c)) {
+      const nd = dist.get(c) + d;
+      if (nd < (dist.get(n) ?? Infinity)) { dist.set(n, nd); prev.set(n, c); open.add(n); }
+    }
+  }
+  const pathNodes = [];
+  for (let c = s1; c !== undefined; c = prev.get(c)) pathNodes.unshift(nodes[c]);
+  return [millYard, ...pathNodes, wharfRoot, wharfEnd];
+})();
+log(`cart road: ${cartPath.length} points`);
+
+// ---- graded ground for the granite work. The survey heights are right for the land, but a mill,
+// its yard and the roads its loads travel were dug and filled level by the people who built them.
+// The mill sits in a hollow south of Brunswick Street (its floor would be buried at the east end
+// and hang in the air at the west), so it gets a level pad at the street's height with its yard,
+// a lane from the street to a side door, and the town's streets get smooth running profiles.
+// (A pad's number is the ground height, not the drawn one: the stage shows heights exaggerated.)
+const MILL_LEVEL = 15.5;       // m: the mill floor and yard; Brunswick Street passes at 14-18 m
+const MILL_DOOR = 12;          // m along the mill's axis from its centre: the north side door
+const STREET_SMOOTH = 14;      // m: how far a street's running profile is smoothed
+const CART_GRADE = 0.07;       // the steepest the cart road to the wharf climbs (cut, never filled)
+const millFrame = (() => {
+  const m = structures.mill, ax = Math.sin(m.rot), az = Math.cos(m.rot), px = az, pz = -ax;
+  return {
+    local: (x, z) => [(x - m.x) * ax + (z - m.z) * az, (x - m.x) * px + (z - m.z) * pz], // [along, across (+ = north side)]
+    world: (a, c) => [m.x + ax * a + px * c, m.z + az * a + pz * c],
+  };
+})();
+// the lane: from the side door straight out across the yard to Brunswick Street
+const millLane = (() => {
+  const door = millFrame.world(MILL_DOOR, structures.mill.width / 2 + 0.3);
+  const out = millFrame.world(MILL_DOOR, 60), bs = streets.filter((s) => s.name === 'Brunswick Street' && !s.bridge);
+  let best = null;
+  for (const s of bs) for (let k = 1; k < s.pts.length; k++) { // where the line out of the door meets the street
+    const [ax, az] = s.pts[k - 1], [bx, bz] = s.pts[k];
+    const d1 = [out[0] - door[0], out[1] - door[1]], d2 = [bx - ax, bz - az];
+    const den = d1[0] * d2[1] - d1[1] * d2[0];
+    if (Math.abs(den) < 1e-6) continue;
+    const t = ((ax - door[0]) * d2[1] - (az - door[1]) * d2[0]) / den, u = ((ax - door[0]) * d1[1] - (az - door[1]) * d1[0]) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && (!best || t < best.t)) best = { t, p: [door[0] + d1[0] * t, door[1] + d1[1] * t] };
+  }
+  const street = best?.p ?? out;
+  return { street, door, inside: millFrame.world(MILL_DOOR, 2) };
+})();
+const MILL_PAD = { a0: -30, a1: 53, c0: -31, c1: 30, feather: 18 }; // in the mill's frame (m): stops short of Brunswick Street
+function millPadWeight(x, z) { // 1 on the level pad, easing to 0 over its feather
+  const [a, c] = millFrame.local(x, z), P = MILL_PAD;
+  const out = Math.hypot(Math.max(P.a0 - a, a - P.a1, 0), Math.max(P.c0 - c, c - P.c1, 0));
+  return 1 - smooth(0, P.feather, out);
+}
+structures.mill.level = MILL_LEVEL;
+structures.mill.door = MILL_DOOR;
+structures.millLane = { street: millLane.street, door: millLane.door, inside: millLane.inside };
+// the mill landing: on the east bank of the millpond just above the Brunswick Street bridge, where
+// the scow is unloaded (src/journey.js finds the berth beside it), and a lane up to the street
+const MILL_LANDING = at(45.13025, -66.82899);
+const landingLane = (() => {
+  let best = null;
+  for (const s of streets.filter((q) => q.name === 'Brunswick Street' && !q.bridge)) for (let k = 1; k < s.pts.length; k++) {
+    const [ax, az] = s.pts[k - 1], [bx, bz] = s.pts[k], dx = bx - ax, dz = bz - az;
+    const f = clamp(((MILL_LANDING[0] - ax) * dx + (MILL_LANDING[1] - az) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+    const p = [ax + dx * f, az + dz * f], d = Math.hypot(p[0] - MILL_LANDING[0], p[1] - MILL_LANDING[1]);
+    if (!best || d < best.d) best = { d, p };
+  }
+  return { street: best.p, landing: MILL_LANDING };
+})();
+structures.millLanding = { x: MILL_LANDING[0], z: MILL_LANDING[1] };
+structures.landingLane = { street: landingLane.street, landing: landingLane.landing };
+streets.push({ name: 'Mill Lane', half: 3, bridge: false, pts: [millLane.street, millLane.door] },
+  { name: 'Landing Lane', half: 3, bridge: false, pts: [landingLane.street, landingLane.landing] });
+streetSegs.push([millLane.street, millLane.door, 3], [landingLane.street, landingLane.landing, 3]);
+{
+  // water that is really there: cells beside the Gorge carry the tidal flag on ground 10 m up
+  const wet = (k) => (townWater[k] === SEA ? townHeight[k] < HIGH_WATER + 1.5 : !Number.isNaN(townWater[k]) && townHeight[k] < townWater[k] + 0.5);
+  const nearGorge = (x, z, margin = 22) => { const g = gorgeAt(x, z); return g && g.d < GORGE_HALF + margin; };
+  const cellXZ = (k) => [TOWN.x0 + (k % TOWN.w) * TOWN_CELL, TOWN.z0 + Math.floor(k / TOWN.w) * TOWN_CELL];
+  const sampleT = (arr, x, z) => {
+    const u = clamp((x - TOWN.x0) / TOWN_CELL, 0, TOWN.w - 1.001), v = clamp((z - TOWN.z0) / TOWN_CELL, 0, TOWN.h - 1.001);
+    const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * TOWN.w + i;
+    return mix(mix(arr[k], arr[k + 1], a), mix(arr[k + TOWN.w], arr[k + TOWN.w + 1], a), b);
+  };
+  // 1. the mill pad: the building, its wing, the yard along the north side out to the street and
+  // the east yard where the lathe and the wagon stand. Level inside, eased back to the land outside.
+  const padWeight = millPadWeight;
+  for (let k = 0; k < townHeight.length; k++) {
+    const [x, z] = cellXZ(k);
+    if (wet(k) || nearGorge(x, z, 8)) continue; // the mill's wing stands close above the Gorge's wall
+    const w = padWeight(x, z);
+    if (w > 0) townHeight[k] = mix(townHeight[k], MILL_LEVEL, w);
+    if (w > 0.5 && townWater[k] === SEA) townWater[k] = NaN; // dry yard now, not tidal
+  }
+  // 2. the streets: each one's running profile, smoothed along it (no bumps from the 10 m survey
+  // cells or the house pads), laid across the street and eased out over the verges. The cart road
+  // to the wharf also has its crest cut down so it never climbs steeper than CART_GRADE.
+  const profileOf = (pts, sigma) => {
+    const S = [0], P = [];
+    const along = [];
+    for (let k = 1; k < pts.length; k++) S.push(S[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+    const L = S[S.length - 1], n = Math.max(2, Math.ceil(L / 2.5) + 1);
+    let seg = 1;
+    for (let q = 0; q < n; q++) {
+      const s = (q / (n - 1)) * L;
+      while (seg < pts.length - 1 && S[seg] < s) seg++;
+      const f = (s - S[seg - 1]) / (S[seg] - S[seg - 1] || 1);
+      const x = mix(pts[seg - 1][0], pts[seg][0], f), z = mix(pts[seg - 1][1], pts[seg][1], f);
+      along.push([x, z, s]); P.push(sampleT(townHeight, x, z));
+    }
+    const out = P.map((_, q) => {
+      let sum = 0, wsum = 0;
+      for (let r = 0; r < n; r++) {
+        const d = along[r][2] - along[q][2];
+        if (Math.abs(d) > sigma * 2.5) continue;
+        const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+        sum += P[r] * w; wsum += w;
+      }
+      return sum / wsum;
+    });
+    return { along, h: out, L };
+  };
+  const inside = (x, z) => inTown(x, z, 60); // the rim must meet the 30 m ground
+  const lay = (prof, half, feather, limit, skip = () => false) => {
+    const src = Float32Array.from(townHeight);
+    const near = new Float32Array(townHeight.length).fill(Infinity), target = new Float32Array(townHeight.length);
+    for (let q = 0; q < prof.along.length; q++) {
+      const [x, z] = prof.along[q], r = half + feather;
+      const i0 = Math.max(0, Math.floor((x - r - TOWN.x0) / TOWN_CELL)), i1 = Math.min(TOWN.w - 1, Math.ceil((x + r - TOWN.x0) / TOWN_CELL));
+      const j0 = Math.max(0, Math.floor((z - r - TOWN.z0) / TOWN_CELL)), j1 = Math.min(TOWN.h - 1, Math.ceil((z + r - TOWN.z0) / TOWN_CELL));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k = j * TOWN.w + i, d = Math.hypot(TOWN.x0 + i * TOWN_CELL - x, TOWN.z0 + j * TOWN_CELL - z);
+        if (d < near[k]) { near[k] = d; target[k] = prof.h[q]; } // the profile where the road passes closest
+      }
+    }
+    for (let k = 0; k < townHeight.length; k++) {
+      const w = 1 - smooth(half + 1, half + feather, near[k]);
+      if (w <= 0) continue;
+      const [x, z] = cellXZ(k);
+      if (wet(k) || nearGorge(x, z) || !inside(x, z) || skip(x, z)) continue;
+      townHeight[k] = src[k] + clamp(target[k] - src[k], -limit, limit) * w;
+    }
+  };
+  const inPad = (x, z) => padWeight(x, z) >= 0.999;
+  for (const s of streets) {
+    if (s.bridge || s.name.endsWith('Lane') || !s.pts.some(([x, z]) => inTown(x, z))) continue;
+    lay(profileOf(s.pts, STREET_SMOOTH), s.half, 10, 2.5, inPad);
+  }
+  // the lane: an even ramp from the street to the edge of the yard, level across the yard
+  {
+    const prof = profileOf([millLane.street, millLane.door], 1);
+    const h0 = sampleT(townHeight, ...millLane.street);
+    const edge = prof.along.find(([x, z]) => millPadWeight(x, z) >= 0.999)?.[2] ?? prof.L;
+    prof.h = prof.along.map(([, , s]) => mix(h0, MILL_LEVEL, Math.min(1, s / edge)));
+    lay(prof, 5, 10, 6, inPad);
+  }
+  // and the landing's lane: an even slope from the street down to the bank (no hump between)
+  {
+    const prof = profileOf([landingLane.street, landingLane.landing], 1);
+    const h0 = sampleT(townHeight, ...landingLane.street), h1 = sampleT(townHeight, ...landingLane.landing);
+    prof.h = prof.along.map(([, , s]) => mix(h0, h1, s / prof.L));
+    lay(prof, 5, 10, 3);
+  }
+  // 3. the cart road: the mill yard to the wharf, its crest cut to CART_GRADE
+  (() => {
+    const pts = cartPath.slice(0, -1); // stop at the wharf's root (the rest is its deck)
+    const prof = profileOf(pts, STREET_SMOOTH);
+    const ds = prof.L / (prof.h.length - 1);
+    prof.h[0] = MILL_LEVEL;
+    for (let q = 1; q < prof.h.length; q++) prof.h[q] = Math.min(prof.h[q], prof.h[q - 1] + CART_GRADE * ds);
+    for (let q = prof.h.length - 2; q >= 0; q--) prof.h[q] = Math.min(prof.h[q], prof.h[q + 1] + CART_GRADE * ds);
+    lay(prof, 7, 12, 3.5, inPad);
+    if (process.env.DEBUG_GRADE) log('cart profile', prof.along.filter((_, q) => q % 4 === 0 && q < 60).map(([x, z, s], q) => `${s.toFixed(0)}(${x.toFixed(0)},${z.toFixed(0)}):${prof.h[q * 4].toFixed(2)}/${sampleT(townHeight, x, z).toFixed(2)}`).join(' '));
+  })();
+}
 function townHeightAt(x, z) {
   const u = clamp((x - TOWN.x0) / TOWN_CELL, 0, TOWN.w - 1.001), v = clamp((z - TOWN.z0) / TOWN_CELL, 0, TOWN.h - 1.001);
   const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * TOWN.w + i;
@@ -1142,6 +1360,9 @@ const sdf = (d) => Math.round(clamp(0.5 - d / 8, 0, 1) * 255);
     }
     const g = gorgeAt(x, z);
     if (g && g.t > 10 && g.d < 34) { rock = smooth(34, 22, g.d); col = lerpC(col, ROCK, rock); }
+    // the mill yard: packed dirt and stone chips where the carts turn
+    const mw = millPadWeight(x, z);
+    if (mw > 0.4 && !sea[c] && !waterId[c]) col = lerpC(col, lerpC(DIRT_EDGE, [168, 150, 128], hash2(i, j, 71)), smooth(0.4, 0.95, mw) * 0.85);
     const st = nearestStreet(x, z);
     if (st.d < 1.5) { road = smooth(1.5, 0, st.d); col = lerpC(col, st.d > 0 ? DIRT_EDGE : DIRT, road); }
     const p = (j * TOWN.pw + i) * 4;
@@ -1158,41 +1379,6 @@ const sdf = (d) => Math.round(clamp(0.5 - d / 8, 0, 1) * 255);
 }
 log(`town inset ${TOWN.w}x${TOWN.h}, paint ${TOWN.pw}x${TOWN.ph}`);
 
-// ---- the cart road from the mill yard down to the main wharf, along the old streets
-const cartPath = (() => {
-  const nodes = [], edges = new Map();
-  const nodeOf = ([x, z]) => {
-    let k = nodes.findIndex(([nx, nz]) => Math.hypot(nx - x, nz - z) < 4);
-    if (k < 0) { k = nodes.push([x, z]) - 1; edges.set(k, []); }
-    return k;
-  };
-  for (const st of streets) for (let k = 0; k + 1 < st.pts.length; k++) {
-    const a = nodeOf(st.pts[k]), b = nodeOf(st.pts[k + 1]);
-    const d = Math.hypot(nodes[a][0] - nodes[b][0], nodes[a][1] - nodes[b][1]);
-    edges.get(a).push([b, d]); edges.get(b).push([a, d]);
-  }
-  const m = structures.mill, w = structures.wharf;
-  const millYard = [m.x + Math.sin((63 * Math.PI) / 180) * 50, m.z - Math.cos((63 * Math.PI) / 180) * 50]; // the east end
-  const wharfRoot = [w.x, w.z];
-  const wharfEnd = [w.x + Math.sin(w.rot) * (w.length * 0.8), w.z + Math.cos(w.rot) * (w.length * 0.8)];
-  const nearest = ([x, z]) => nodes.reduce((b, n, k) => (Math.hypot(n[0] - x, n[1] - z) < Math.hypot(nodes[b][0] - x, nodes[b][1] - z) ? k : b), 0);
-  const s0 = nearest(millYard), s1 = nearest(wharfRoot);
-  const dist = new Map([[s0, 0]]), prev = new Map(), open = new Set([s0]);
-  while (open.size) {
-    let c = null;
-    for (const o of open) if (c === null || dist.get(o) < dist.get(c)) c = o;
-    open.delete(c);
-    if (c === s1) break;
-    for (const [n, d] of edges.get(c)) {
-      const nd = dist.get(c) + d;
-      if (nd < (dist.get(n) ?? Infinity)) { dist.set(n, nd); prev.set(n, c); open.add(n); }
-    }
-  }
-  const pathNodes = [];
-  for (let c = s1; c !== undefined; c = prev.get(c)) pathNodes.unshift(nodes[c]);
-  return [millYard, ...pathNodes, wharfRoot, wharfEnd];
-})();
-log(`cart road: ${cartPath.length} points`);
 
 
 // ---------------------------------------------------------------- trees

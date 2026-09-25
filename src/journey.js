@@ -94,6 +94,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
   group.add(block, column, scow, wagon, truck, schooner);
   truck.name = 'stone truck';
   column.rotation.order = 'YXZ'; // turn to face its heading first, then spin about its own long axis
+  for (const o of [block, wagon, truck]) o.rotation.order = 'YXZ'; // heading, then pitch up or down a slope
   const AXIS = 0.45; // the column's axis above whatever it rests on
 
   // a stone sled: two runners and a plank deck (the block sits on it; its top is 0.4 m up)
@@ -179,11 +180,13 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
   // Stop on the east bank upstream of the upper bridge, before the dam.
   const routeEnd = R.scow.slice().reverse().find((p) => p[1] < -290);
   const gorgeDist = (x, z) => Math.min(...meta.gorge.map(([gx, gz]) => Math.hypot(gx - x, gz - z)));
+  // the landing the build placed (and graded a lane up from), or near where it would be
+  const landingAt = S.millLanding ? [S.millLanding.x, S.millLanding.z] : [-140, -310];
   let MB = null, berth2 = routeEnd, landingTangent = [0, 1];
   {
     let best = Infinity;
     for (let dx = -70; dx <= 70; dx += 2) for (let dz = -70; dz <= 70; dz += 2) {
-      const x = westDoor[0] + dx, z = -300 + dz;
+      const x = landingAt[0] + dx, z = landingAt[1] + dz;
       if (z > -275) continue;
       const h = hAt(x, z);
       const [ux, uz] = unit(x, z, routeEnd[0], routeEnd[1]);
@@ -194,7 +197,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       const tx = uz, tz = -ux;
       if ([-3.2, 3.2].some((side) => [-8.3, 8.3].some((end) =>
         hAt(wx + ux * side + tx * end, wz + uz * side + tz * end) > water - 0.35))) continue;
-      const score = Math.hypot(x + 140, z + 310);
+      const score = Math.hypot(x - landingAt[0], z - landingAt[1]);
       if (score < best) { best = score; MB = [x, z]; berth2 = [wx, wz]; landingTangent = [tx, tz]; }
     }
     if (!MB) MB = [westDoor[0] - max * 12, westDoor[1] - maz * 12];
@@ -222,11 +225,29 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
   // The mill: a truck brings the block up from the landing and in at the west door; the finished
   // column comes out of the east door, turns on the lathe beside the waiting wagon, and goes up
   // the skids onto it.
-  const [mdx, mdz] = unit(MB[0], MB[1], westDoor[0], westDoor[1]);
+  // The haul: up from the landing onto Brunswick Street, along it, and down the mill lane across
+  // the levelled yard to the north side door (scripts/build-terrain.mjs grades the yard and lane).
+  const lane = S.millLane;
+  const truckRoute = (() => {
+    if (!lane) return [westDoor, [westDoor[0] + max * 16, westDoor[1] + maz * 16]];
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    const ways = (meta.streets ?? []).filter((st) => st.name === 'Brunswick Street' && !st.bridge);
+    const way = ways.reduce((b, w) => (Math.min(...w.pts.map((p) => dist(p, lane.street))) < Math.min(...b.pts.map((p) => dist(p, lane.street))) ? w : b), ways[0]);
+    const nearestIndex = (q) => way.pts.reduce((b, p, k) => (dist(p, q) < dist(way.pts[b], q) ? k : b), 0);
+    const up = S.landingLane?.street; // the landing's lane meets the street here
+    const i0 = nearestIndex(up ?? MB), i1 = nearestIndex(lane.street), dir = i1 >= i0 ? 1 : -1;
+    const out = up ? [up] : [];
+    for (let k = i0; k !== i1 + dir; k += dir) { // street corners up to the lane, none past it
+      const p = way.pts[k], last = out[out.length - 1];
+      if (dist(p, lane.street) > 6 && (!last || dist(p, lane.street) < dist(last, lane.street) - 3) && (!up || dist(p, up) > 6)) out.push(p);
+    }
+    return [...out, lane.street, lane.door, lane.inside];
+  })();
+  const [mdx, mdz] = unit(MB[0], MB[1], truckRoute[0][0], truckRoute[0][1]);
   // cameras at the mill landing look back from out over the millpond (the Gorge is the other way)
   const overPond = (() => { const [ux, uz] = unit(MB[0], MB[1], berth2[0], berth2[1]); return Math.atan2(ux, uz); })();
   const truckStart = [MB[0] + mdx * 7, MB[1] + mdz * 7];
-  const truckPath = new Path([truckStart, [lerp(truckStart[0], westDoor[0], 0.5), lerp(truckStart[1], westDoor[1], 0.5)], westDoor, [westDoor[0] + max * 16, westDoor[1] + maz * 16]]);
+  const truckPath = new Path([truckStart, ...truckRoute]);
   const cartPath = new Path(R.cart);
   const c0 = cartPath.at(0);
   // the lathe stands beside the wagon, on whichever side leaves room to roll the column out to it
@@ -259,9 +280,17 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
 
   // ---- placing things
   const V = new THREE.Vector3(), V2 = new THREE.Vector3();
-  const put = (obj, x, y, z, heading = obj.rotation.y) => { obj.position.set(x, y, z); obj.rotation.y = heading; };
+  const put = (obj, x, y, z, heading = obj.rotation.y, pitch = 0) => { obj.position.set(x, y, z); obj.rotation.set(pitch, heading, 0); };
+  // a wheeled vehicle on a slope: its middle on the line between its axles, pitched to match (it
+  // returns the pitch, nose-up positive, for whatever rides on it)
+  const drive = (obj, x, z, heading, yAt = groundAt, half = 1.6) => {
+    const sx = Math.sin(heading) * half, sz = Math.cos(heading) * half;
+    const yf = yAt(x + sx, z + sz), yb = yAt(x - sx, z - sz), pitch = Math.atan2(yf - yb, 2 * half);
+    put(obj, x, (yf + yb) / 2, z, heading, -pitch);
+    return pitch;
+  };
   const sledTo = (x, z, heading) => put(sled, x, groundAt(x, z), z, heading);
-  const blockOn = (obj, top, heading = obj.rotation.y) => put(block, obj.position.x, obj.position.y + top, obj.position.z, heading);
+  const blockOn = (obj, top, heading = obj.rotation.y) => put(block, obj.position.x, obj.position.y + top, obj.position.z, heading, obj.rotation.x);
   const deckOf = () => schooner.localToWorld(V2.set(0, 2.4 + AXIS, -1)).clone();
   const hang = (fall, from, obj, top) => fall(from, V.set(obj.position.x, obj.position.y + top, obj.position.z));
   const idleFall = (fall, apex) => fall(apex, V.copy(apex).add(new THREE.Vector3(0, -3, 0)));
@@ -340,7 +369,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       f.action = at(0) && state.t > 0.12 && state.t < 0.92 ? 'guide' : 'idle';
     } });
     // the sled team and its teamster
-    for (const sx of [-0.6, 0.6]) life.horse({ harness: true, move: life.rideOn(sled, sx, 0, 4.7), y: life.rideY, walking: (h) => h.moving });
+    for (const sx of [-0.6, 0.6]) life.horse({ harness: true, move: life.rideOn(sled, sx, 0, 4.7), y: life.teamY, walking: (h) => h.moving });
     const teamster = life.rideOn(sled, 2.3, 0, 3.4);
     crew.teamster = person('quarryman', { hat: 'straw', move: (f, dt) => {
       teamster(f, dt);
@@ -362,7 +391,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     shearCrew(LB, berth1, 'fall1', () => at(2));
     shearCrew(MB, berth2, 'fall2', () => at(5));
     // the truck's team and driver
-    for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(truck, sx, 0, 5.4), y: life.rideY, walking: (h) => h.moving });
+    for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(truck, sx, 0, 5.4), y: life.teamY, walking: (h) => h.moving });
     person('townsman', { action: 'drive', tool: 'reins', move: life.rideOn(truck, 0, 1.3, 1.9), y: life.rideY });
     // two men who roll the column out of the mill and up the skids; a polisher at the lathe
     for (const s of [-1, 1]) {
@@ -402,7 +431,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 1.4, 2.4, -9.5), y: life.rideY });
     life.person('sailor', { action: 'idle', move: life.rideOn(schooner, 0.9, 2.4, 10, Math.PI), y: life.rideY });
     // the wagon's team and driver
-    for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(wagon, sx, 0, 5.4), y: life.rideY, walking: (h) => h.moving });
+    for (const sx of [-0.62, 0.62]) life.horse({ harness: true, move: life.rideOn(wagon, sx, 0, 5.4), y: life.teamY, walking: (h) => h.moving });
     crew.driver = person('townsman', { action: 'drive', tool: 'reins', move: life.rideOn(wagon, 0, 1.3, 1.9), y: life.rideY });
   }
 
@@ -417,8 +446,8 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     const s0 = scowAt(0);
     put(scow, s0.x, s0.y, s0.z, s0.heading);
     const t0 = truckPath.at(0);
-    put(truck, t0.x, groundAt(t0.x, t0.z), t0.z, t0.heading);
-    put(wagon, c0.x, groundAt(c0.x, c0.z), c0.z, c0.heading);
+    drive(truck, t0.x, t0.z, t0.heading);
+    drive(wagon, c0.x, c0.z, c0.heading);
     put(schooner, berth[0], world.tide * exag(), berth[1], W.rot);
     schooner.userData.setSails(false);
     put(lathe, latheAt[0], groundAt(latheAt[0], latheAt[1]), latheAt[1], c0.heading + Math.PI / 2);
@@ -569,7 +598,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
         const s = scowAt(1);
         put(scow, s.x, s.y, s.z, s.heading);
         const t0 = truckPath.at(0);
-        put(truck, t0.x, groundAt(t0.x, t0.z), t0.z, t0.heading);
+        drive(truck, t0.x, t0.z, t0.heading);
         const from = new THREE.Vector3(scow.position.x, scow.position.y + 1.4, scow.position.z);
         const to = new THREE.Vector3(truck.position.x, truck.position.y + 1.35, truck.position.z);
         const lift = ease(span(t, 0.05, 0.3)), across = ease(span(t, 0.3, 0.65)), lower = ease(span(t, 0.68, 0.92));
@@ -581,12 +610,12 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       },
     },
     {
-      title: 'Into the mill', seconds: 24, source: `${MARTIN}, p. 13 and Map 4`,
+      title: 'Into the mill', seconds: Math.max(24, truckPath.length / 4.5), source: `${MARTIN}, p. 13 and Map 4`,
       text: 'A horse team draws the truck up from the landing and in through the big doors of the Bay of Fundy Red Granite Co.’s mill.',
       update(t) {
         running.fall2 = false; idleFall(fall2, shears2.apex);
-        const p = truckPath.at(ease(t)); // about 60 m at a walk: no cut needed
-        put(truck, p.x, groundAt(p.x, p.z), p.z, p.heading);
+        const p = truckPath.at(ease(t)); // along the street at a brisk walk: no cut needed
+        drive(truck, p.x, p.z, p.heading);
         blockOn(truck, 1.35, p.heading);
         block.visible = t < 0.97;
         return { target: [p.x, p.z], dist: 60, from: overPond + 0.3, tilt: 0.5 };
@@ -598,7 +627,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       update(t) {
         block.visible = false;
         const pt = truckPath.at(0);
-        put(truck, pt.x, groundAt(pt.x, pt.z), pt.z, pt.heading);
+        drive(truck, pt.x, pt.z, pt.heading);
         column.visible = true;
         const u = ease(span(t, 0.02, 0.45));
         const x = lerp(eastDoor[0], latheAt[0], u), z = lerp(eastDoor[1], latheAt[1], u);
@@ -640,10 +669,10 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
         const d = pace.town.at(t * pace.town.seconds);
         where.wagonV = pace.town.speed(d); where.wagonS = d;
         const c = cartPath.at(d / cartPath.length);
-        put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
-        column.rotation.x = 0;
+        const pitch = drive(wagon, c.x, c.z, c.heading, roadAt);
         column.visible = true;
-        put(column, c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z, c.heading + Math.PI / 2);
+        put(column, c.x, wagon.position.y + 1.35 + AXIS, c.z, c.heading + Math.PI / 2);
+        column.rotation.z = -pitch; // lying along the wagon bed, up or down the hill with it
         return pacedView('town', B.town, d, [c.x, c.z], c.heading, { slow: 2, fast: 6, dist: 34, far: 30, from: 2.4, tilt: 0.33 });
       },
     },
@@ -652,10 +681,10 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       text: 'The schooner’s crew haul on a tackle from the foremast. The column swings up off the wagon and down onto the deck. That summer the company’s first orders included seven polished columns for a cathedral in Boston.',
       update(t) {
         const c = cartPath.at(1);
-        put(wagon, c.x, roadAt(c.x, c.z), c.z, c.heading);
+        drive(wagon, c.x, c.z, c.heading, roadAt);
         put(schooner, berth[0], world.tide * exag(), berth[1], W.rot);
         schooner.userData.setSails(false); // furled alongside the wharf; set again to sail
-        const from = new THREE.Vector3(c.x, roadAt(c.x, c.z) + 1.35 + AXIS, c.z), to = deckOf();
+        const from = new THREE.Vector3(c.x, wagon.position.y + 1.35 + AXIS, c.z), to = deckOf();
         const lift = ease(span(t, 0.05, 0.3)), across = ease(span(t, 0.3, 0.68)), lower = ease(span(t, 0.7, 0.92));
         const top = Math.max(from.y, to.y) + 4;
         column.position.set(lerp(from.x, to.x, across), t >= 0.92 ? to.y : lerp(lerp(from.y, top, lift), to.y, lower), lerp(from.z, to.z, across));
@@ -840,5 +869,6 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
     get active() { return state.step >= 0; },
     /** where the hand-offs happen, for anyone scripting their own scenes */
     places: { P0, S0, LB, berth1, MB, berth2, westDoor, eastDoor, latheAt, berth },
+    paths: { truck: truckPath, cart: cartPath, scow: scowPath },
   };
 }

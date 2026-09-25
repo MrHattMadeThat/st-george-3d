@@ -8,7 +8,8 @@
     "dev": "vite --port 5631 --strictPort",
     "build:data": "node scripts/build-terrain.mjs",
     "build": "vite build",
-    "preview": "vite preview --port 5632 --strictPort"
+    "preview": "vite preview --port 5632 --strictPort",
+    "check": "node scripts/check-journey.mjs && node scripts/check-town.mjs"
   },
   "dependencies": {
     "three": "^0.185.1"

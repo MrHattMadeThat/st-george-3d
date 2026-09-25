@@ -22,6 +22,7 @@ const OUTFITS = {
   sailor: { coat: ['#2f3a4a', '#3a4a5a', '#e8e2d4'], legs: ['#2f2f35', '#3a3a40'], hat: [['cap', 0.8], [null, 0.2]], hatColor: ['#1f2530', '#2a2622'], beard: 0.6 },
 };
 const HAIR = ['#3a2a1e', '#5a4030', '#2a2420', '#8a6a4a', '#a0522d', '#6a6a6a'];
+const YOUNG_HAIR = ['#3a2a1e', '#5a4030', '#8a6a4a', '#a0522d', '#c8a060', '#d8b878']; // no grey on a child
 const HORSE_COLORS = ['#6b4226', '#8a4a26', '#2b2522', '#9a948c', '#5a3a26', '#7a5236'];
 
 export function buildLife({ scene, data, world, camera }) {
@@ -51,7 +52,7 @@ export function buildLife({ scene, data, world, camera }) {
     const dress = o.dress ? pick(o.dress) : null;
     return crowd.add({
       kind, hat: pickW(o.hat), beard: kind === 'man' && rnd() < (o.beard ?? 0),
-      colors: { coat: dress ?? pick(o.coat), dress, legs: o.legs ? pick(o.legs) : '#3a3530', skin: pick(SKIN), hair: pick(HAIR), hat: pick(o.hatColor) },
+      colors: { coat: dress ?? pick(o.coat), dress, legs: o.legs ? pick(o.legs) : '#3a3530', skin: pick(SKIN), hair: pick(kind === 'boy' || kind === 'girl' ? YOUNG_HAIR : HAIR), hat: pick(o.hatColor) },
       heading: 0, action: 'idle', seed: rnd(), ...f,
     });
   }
@@ -101,6 +102,10 @@ export function buildLife({ scene, data, world, camera }) {
     };
   }
   const rideY = (f) => f.rideY;
+  // a horse drawing something walks on the ground under its own hooves, not at the height of the
+  // load 5 m behind it (on a slope that left the team floating or sunk); on a wharf or a deck,
+  // well above the ground, it keeps to the deck
+  const teamY = (f) => { const g = groundY(f.x, f.z); return f.rideY !== undefined && f.rideY - g > 1 ? f.rideY : g; };
 
   // ---- a place's local frame: x across, z along its facing
   const frame = (x, z, rot) => (lx, lz) => [x + lx * Math.cos(rot) + lz * Math.sin(rot), z - lx * Math.sin(rot) + lz * Math.cos(rot)];
@@ -411,7 +416,7 @@ export function buildLife({ scene, data, world, camera }) {
   }
   function team(obj, { stand = false } = {}) {
     // two horses ahead of the wagon and a driver on the seat
-    const hs = [-0.62, 0.62].map((sx) => horse({ harness: true, move: rideOn(obj, sx, 0, 5.3), y: rideY, walking: (h) => !stand && h.moving }));
+    const hs = [-0.62, 0.62].map((sx) => horse({ harness: true, move: rideOn(obj, sx, 0, 5.3), y: teamY, walking: (h) => !stand && h.moving }));
     const drv = person('townsman', { action: 'drive', tool: 'reins', move: rideOn(obj, 0, 1.25, 1.9), y: rideY });
     return { horses: hs, driver: drv };
   }
@@ -421,7 +426,15 @@ export function buildLife({ scene, data, world, camera }) {
     life.add(w);
     const mover = pingpong(s.pts, { speed: 1.5, side: 1.4 });
     const state = { x: 0, z: 0, heading: 0, speed: 1.5 };
-    wagons.push({ obj: w, update(dt) { mover(state, dt); w.position.set(state.x, groundY(state.x, state.z), state.z); w.rotation.y = state.heading; for (const wh of w.userData.wheels) wh.rotation.x += dt * state.speed / 0.8; } });
+    w.rotation.order = 'YXZ'; // heading, then pitched to the slope
+    wagons.push({ obj: w, update(dt) {
+      mover(state, dt);
+      // all four wheels on the road: the body on the line between the axles, pitched up or down the hill
+      const sx = Math.sin(state.heading) * 1.6, sz = Math.cos(state.heading) * 1.6;
+      const yf = groundY(state.x + sx, state.z + sz), yb = groundY(state.x - sx, state.z - sz);
+      w.position.set(state.x, (yf + yb) / 2, state.z); w.rotation.set(-Math.atan2(yf - yb, 3.2), state.heading, 0);
+      for (const wh of w.userData.wheels) wh.rotation.x += dt * state.speed / 0.8;
+    } });
     team(w);
   });
 
@@ -552,7 +565,7 @@ export function buildLife({ scene, data, world, camera }) {
   let t = 0;
   return {
     group: life, crowd, herd, chips, derrick,
-    person, horse, rideOn, rideY,
+    person, horse, rideOn, rideY, teamY,
     update(dt) {
       t += dt;
       derrick?.update(dt, t);

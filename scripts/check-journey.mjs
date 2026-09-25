@@ -1,17 +1,11 @@
 // Geometry regression checks against the shipped terrain, without a WebGL context.
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
 import * as THREE from 'three';
-import { loadData } from '../src/data.js';
+import { load } from './load-stage.mjs';
 import { buildJourney } from '../src/journey.js';
 import { quarryLanding } from '../src/landings.js';
 
-THREE.TextureLoader.prototype.loadAsync = async () => new THREE.Texture();
-globalThis.fetch = async (url) => {
-  const b = await fs.readFile(new URL('../public/' + url, import.meta.url));
-  return { ok: true, arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), json: async () => JSON.parse(b) };
-};
-const data = await loadData();
+const data = await load();
 const prop = () => { const o = new THREE.Group(); o.userData.setSails = () => {}; return o; };
 const world = { exag: 3, tide: 0, toon: null, props: Object.fromEntries(['block', 'column', 'scow', 'wagon', 'schooner'].map((k) => [k, () => { const o = prop(); o.name = k; return o; }])) };
 const camera = new THREE.PerspectiveCamera(), controls = { target: new THREE.Vector3() };

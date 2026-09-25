@@ -44,8 +44,12 @@ const BODY = {
   torso: () => merge([slab(0.46, 0.38, 0.58, 0.26, 0), slab(0.42, 0.5, 0.24, 0.3, -0.1), sp(0.09, 0.2, 0.52, 0, TINT, false, 1, 1, 1, 0), sp(0.09, -0.2, 0.52, 0, TINT, false, 1, 1, 1, 0),
     bx(0.14, 0.22, 0.02, 0, 0.34, 0.13, '#efe9dc', true), cy(0.065, 0.07, 0.1, 0, 0.57, 0, '#e0b48f', true)]),
   arm: () => merge([cy(0.066, 0.056, 0.54, 0, -0.54, 0), sp(0.058, 0, -0.6, 0.01, SKIN_HAND, true, 1, 1, 1, 0)]),
-  head: () => merge([sp(0.15, 0, 0.14, 0), bx(0.05, 0.06, 0.06, 0, 0.12, 0.15), bx(0.035, 0.035, 0.02, 0.055, 0.17, 0.14, DARK, true), bx(0.035, 0.035, 0.02, -0.055, 0.17, 0.14, DARK, true),
-    sp(0.15, 0, 0.17, -0.02, '#5a4030', true, 1.02, 0.7, 1.02)]),
+  head: () => merge([sp(0.15, 0, 0.14, 0), bx(0.05, 0.06, 0.06, 0, 0.12, 0.15), bx(0.035, 0.035, 0.02, 0.055, 0.17, 0.14, DARK, true), bx(0.035, 0.035, 0.02, -0.055, 0.17, 0.14, DARK, true)]),
+  // hair: over the whole crown and down the back (a flatter cap left the crown bare, which read
+  // as a bald old man on every child), with a fringe above the eyes
+  hair: () => merge([sp(0.157, 0, 0.175, -0.03, TINT, false, 1.05, 0.84, 1.05), bx(0.2, 0.05, 0.05, 0, 0.23, 0.1)]),
+  // long hair for women and girls without a bonnet: down the back, and two plaits
+  hairLong: () => merge([bx(0.27, 0.3, 0.07, 0, -0.04, -0.12), cy(0.035, 0.03, 0.26, 0.11, -0.2, -0.06), cy(0.035, 0.03, 0.26, -0.11, -0.2, -0.06)]),
   beard: () => merge([bx(0.22, 0.14, 0.12, 0, 0.0, 0.08), bx(0.2, 0.05, 0.05, 0, 0.1, 0.13)]),
   skirt: () => merge([cy(0.2, 0.36, 0.88, 0, -0.88, 0, TINT, false, 9), bx(0.26, 0.6, 0.02, 0, -0.66, 0.29, '#efe9dc', true)]),
 };
@@ -86,7 +90,7 @@ const TOOLS = {
 const HORSE = {
   body: () => merge([bx(0.62, 0.72, 1.85, 0, 0.95, 0), sp(0.36, 0, 1.3, -0.8, TINT, false, 0.9, 1, 0.9), sp(0.36, 0, 1.33, 0.75, TINT, false, 0.9, 1, 0.9)]),
   head: () => merge([bx(0.26, 0.85, 0.36, 0, 0, 0.1).rotateX(0.65), bx(0.25, 0.28, 0.62, 0, 0.58, 0.62).rotateX(0.25), bx(0.06, 0.55, 0.14, 0, 0.1, -0.1, DARK, true).rotateX(0.65),
-    bx(0.06, 0.12, 0.08, 0.09, 0.95, 0.35, DARK, true), bx(0.06, 0.12, 0.08, -0.09, 0.95, 0.35, DARK, true)]),
+    bx(0.07, 0.2, 0.08, 0.08, 0.66, 0.47, DARK, true), bx(0.07, 0.2, 0.08, -0.08, 0.66, 0.47, DARK, true)]), // ears, on the poll
   leg: () => merge([bx(0.15, 0.82, 0.17, 0, -0.82, 0), bx(0.17, 0.13, 0.19, 0, -0.95, 0.01, DARK, true)]),
   tail: () => bx(0.1, 0.75, 0.12, 0, -0.75, 0, DARK, true),
   harness: () => merge([bx(0.66, 0.1, 0.16, 0, 1.62, 0.55, '#3b2a1c', true), bx(0.7, 0.34, 0.12, 0, 1.2, 0.95, '#3b2a1c', true)]),
@@ -400,6 +404,7 @@ export class Crowd {
       torso: make('torso', BODY.torso()),
       armL: make('armL', BODY.arm()), armR: make('armR', BODY.arm()), head: make('head', BODY.head()),
       beard: make('beard', BODY.beard()), skirt: make('skirt', BODY.skirt()),
+      hair: make('hair', BODY.hair()), hairLong: make('hairLong', BODY.hairLong()),
     };
     this.hats = Object.fromEntries(Object.entries(HATS).map(([k, g]) => [k, make(`hat:${k}`, g())]));
     this.tools = Object.fromEntries(Object.entries(TOOLS).map(([k, g]) => [k, make(`tool:${k}`, g())]));
@@ -424,7 +429,7 @@ export class Crowd {
     const col = f.colors;
     for (const k of ['thighL', 'thighR', 'shinL', 'shinR']) set(this.parts[k], col.legs);
     set(this.parts.torso, col.coat); set(this.parts.armL, col.coat); set(this.parts.armR, col.coat);
-    set(this.parts.head, col.skin); set(this.parts.beard, col.hair); set(this.parts.skirt, col.dress ?? col.coat);
+    set(this.parts.head, col.skin); set(this.parts.beard, col.hair); set(this.parts.hair, col.hair ?? '#5a4030'); set(this.parts.hairLong, col.hair ?? '#5a4030'); set(this.parts.skirt, col.dress ?? col.coat);
     if (f.hat) set(this.hats[f.hat], col.hat);
     for (const m of [...Object.values(this.parts), ...Object.values(this.hats), ...Object.values(this.tools)]) m.instanceColor.needsUpdate = true;
     return f;
@@ -472,6 +477,8 @@ export class Crowd {
       M.head.multiplyMatrices(M.torso, local(0, 0.66, 0, pose.headPitch, pose.headYaw, 0, 'YXZ'));
       P.head.setMatrixAt(f.i, M.head);
       P.beard.setMatrixAt(f.i, f.beard ? M.head : M.zero);
+      P.hair.setMatrixAt(f.i, M.head);
+      P.hairLong.setMatrixAt(f.i, woman && f.hat !== 'bonnet' ? M.head : M.zero);
       if (f.hat) this.hats[f.hat].setMatrixAt(f.i, M.head);
       const armL = M.armL.multiplyMatrices(M.torso, local(0.27, 0.55, 0, -pose.armLp, 0, pose.armLr));
       P.armL.setMatrixAt(f.i, armL);
