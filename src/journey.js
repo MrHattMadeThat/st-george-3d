@@ -463,7 +463,7 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       const away = Math.atan2(pos[0] - b.look[0], pos[1] - b.look[1]);
       const side = Math.sin(from - away) >= 0 ? 1 : -1;
       from = lerpAngle(from, away + side * 1.15, w);
-      const narrow = Math.min(1, camera.aspect * 1.1); // a tall phone screen needs to stand further back to fit both
+      const narrow = camera.aspect > 0 ? Math.min(1, camera.aspect * 1.1) : 1; // a tall phone screen needs to stand further back to fit both
       dist = lerp(dist, THREE.MathUtils.clamp((sep * 1.25 + 18) / narrow, near.dist, 150 / narrow), w);
       tilt = lerp(tilt, near.tilt + 0.12, w);
     }
@@ -776,6 +776,8 @@ export function buildJourney({ scene, camera, controls, data, world, life, critt
       // settling after a pause flies back briskly; otherwise the camera follows the shot closely
       // (the viewer's own changes are already in it), easing a little so step changes don't jolt
       const k = snap ? 1 : 1 - Math.exp(-dt * (settling > 0 ? 3.5 : steering ? 2.2 : 6));
+      if (!Number.isFinite(want.pos.x + want.pos.y + want.pos.z)) return; // no shot to take (a 0x0 window): leave the camera be
+      if (!Number.isFinite(camera.position.x + camera.position.y + camera.position.z)) { camera.position.copy(want.pos); controls.target.copy(want.target); }
       camera.position.lerp(want.pos, k);
       controls.target.lerp(want.target, k);
       if (settling > 0) {
